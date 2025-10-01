@@ -18,17 +18,18 @@ using namespace std;
 // shared resources/globals
 queue<string> keyboard_queue;
 mutex queue_mutex;
-//
+
 atomic<bool> running(true);
 atomic<bool> keyboard_stop(false);
 atomic<bool> marqueeRunning(false);
 atomic<int> marqueeSpeed(200);
-//
+
 string marqueeText = "CSOPESY";
 // text to ascii
 map<char, vector<string>> asciiFont;
 int letterHeight = 6; // in letters.txt, each letter is 6 lines
 
+// loads ascii font from letters.txt (do not edit letters.txt)
 void loadASCIIfont(const string& filename) {
     ifstream infile(filename);
     if (!infile) {
@@ -42,7 +43,7 @@ void loadASCIIfont(const string& filename) {
     while (currentChar <= 'Z' && infile) {
         vector<string> charLines;
 
-        // Read exactly letterHeight lines for this char
+        // read exactly letterHeight lines for this char
         for (int i = 0; i < letterHeight && getline(infile, line); i++) {
             charLines.push_back(line);
         }
@@ -57,11 +58,24 @@ void loadASCIIfont(const string& filename) {
         currentChar++;
     }
 
-    int width = asciiFont['A'][0].size();
+    // handle ! char at the end
+    if (infile) {
+        vector<string> charLines;
+        for (int i = 0; i < letterHeight && getline(infile, line); i++) {
+            charLines.push_back(line);
+        }
+
+        if (!charLines.empty()) {
+            asciiFont['!'] = charLines;
+        }
+    }
+
+    // handle the space char " "
+    int width = asciiFont['A'][0].size(); // Assume all letters have the same width
     asciiFont[' '] = vector<string>(letterHeight, string(width, ' '));
 }
 
-
+// converts plain text into ASCII art font
 string textToAscii(const string& text) {
     vector<string> output(letterHeight, "");
     int letterSpacing = 1; // space between letters
@@ -70,7 +84,7 @@ string textToAscii(const string& text) {
         char upper = toupper(c);
 
         if (asciiFont.find(upper) == asciiFont.end()) {
-            // fallback: use width of 'A' or just 5 spaces
+            // FALLBACK: use width of 'A' or just blank spaces
             int width = asciiFont['A'][0].size();
             for (int i = 0; i < letterHeight; i++) {
                 output[i] += string(width + letterSpacing, ' ');
@@ -83,14 +97,13 @@ string textToAscii(const string& text) {
         }
     }
 
-    // join into one big string
+    // joine verything into one big string
     stringstream ss;
     for (string& line : output) {
         ss << line << "\n";
     }
     return ss.str();
 }
-
 
 // ----- KEYBOARD HANDLER -----
 void keyboardHandler() {
@@ -125,23 +138,6 @@ void keyboardHandler() {
 }
 
 // ----- MARQUEE LOGIC -----
-/* void marqueeHandler() {
-    while (running) {
-        if (marqueeRunning) {
-            string text;
-            {
-                lock_guard<mutex> lock(queue_mutex);
-                text = marqueeText;
-            }
-            rotate(text.begin(), text.begin() + 1, text.end());
-            cout << "\r" << text << flush;
-            this_thread::sleep_for(chrono::milliseconds(marqueeSpeed));
-        } else {
-            this_thread::sleep_for(chrono::milliseconds(100));
-        }
-    }
-} */
-
 void marqueeHandler() {
     int offset = 0;
     while (running) {
@@ -152,8 +148,6 @@ void marqueeHandler() {
                 lock_guard<mutex> lock(queue_mutex);
                 asciiText = marqueeText;
             }
-            // rotate(text.begin(), text.begin() + 1, text.end());
-            // print marquee at the top, move everything to the bottom
             
             // Split asciiText into lines
             vector<string> lines;
@@ -164,7 +158,7 @@ void marqueeHandler() {
             }
 
             system("cls"); // clear screen
-            int width = 80; // console width
+            int width = 80; // base console width
             size_t loopLen = lines.empty() ? 0 : (lines[0].size() + 3); // base wrap size
 
             for (string& l : lines) {
@@ -181,16 +175,10 @@ void marqueeHandler() {
 
             cout << "\nCommand> " << flush;
 
-            // Move cursor to line 1, clear, print marquee
-            //cout << "\033[1;1H\033[K" << text << flush;
-
-            // Move cursor back down to command line
-            //cout << "\n\n\n\n\n\n \033[3;1HCommand> " << flush;
-
             this_thread::sleep_for(chrono::milliseconds(marqueeSpeed));
-            // offset = (offset + 1) % 80;
+            
 
-            // cycle offset across the full doubled line length
+            // cycle offset across the full doubled line length instead of offset = (offset + 1) % 80;
             if (!lines.empty()) {
                 offset = (offset + 1) % (lines[0].size() + 3);
             }
@@ -203,7 +191,6 @@ void marqueeHandler() {
         }
     }
 }
-
 
 // ----- COMMAND INTERPRETER -----
 // from the template we removed the switch cases
