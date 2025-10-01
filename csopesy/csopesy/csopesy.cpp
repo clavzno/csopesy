@@ -24,7 +24,7 @@ atomic<bool> keyboard_stop(false);
 atomic<bool> marqueeRunning(false);
 atomic<int> marqueeSpeed(200);
 //
-string marqueeText = "CSOPESY!";
+string marqueeText = "CSOPESY";
 // text to ascii
 map<char, vector<string>> asciiFont;
 int letterHeight = 6; // in letters.txt, each letter is 6 lines
@@ -312,7 +312,7 @@ void commandInterpreter() {
 
 int main() {
     loadASCIIfont("letters.txt");
-    marqueeText = textToAscii("Hello, World!"); // make sure the font is alr loaded
+    marqueeText = textToAscii("CSOPESY"); // make sure the font is alr loaded
 
     cout << "Welcome to CSOPESY! Type 'help' for commands.\n"
         << "Group 5 Developers: \n"
