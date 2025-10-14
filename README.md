@@ -20,7 +20,7 @@ GROUP 5
 6. Follow on-screen instructions.
 
 (updated 10/14/2025) TO RUN THE PROGRAM THROUGH THE EXE/USING THE PLAY BUTTON
-1. Clone the repository to your local device. It would be in C:\Users\<user>\source\repos\clavzno\csopesy>. Open the file that says `csopesy.sln` (Solution File)
+1. Clone the repository to your local device. It would be in C:\Users\<user>\source\repos\clavzno\csopesy>. Open the file that says `csopesy_program.sln` (Solution File, this has been named csopesy_program to distinguish from the main csopesy.cpp file and the repository name) 
 2. It should bring you to the Solution View. Make sure `letters.txt` and `csopesy.cpp` are in the Source Files folder.
 3. On the Top, click the filled green play button or the unfilled green play button. It should build and run the program.
 4. Follow on-screen instructions.
