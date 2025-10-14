@@ -1,2 +1,10 @@
+# personal files
 .vs/
 .vscode/
+# created when you create a project from existing files
+/Debug
+/x64
+csopesy.vcxproj.user
+# created when you compile csopesy.cpp
+/csopesys
+*.exe

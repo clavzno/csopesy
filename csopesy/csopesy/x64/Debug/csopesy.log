@@ -1,3 +1,0 @@
-﻿C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(77,5): warning : Access to the path 'c:\users\katie\source\repos\csopesy\x64\debug\csopesy.exe' is denied.
-  csopesy.cpp
-LINK : fatal error LNK1104: cannot open file 'C:\Users\katie\source\repos\csopesy\x64\Debug\csopesy.exe'
