@@ -23,5 +23,6 @@
     <Text Include="letters.txt">
       <Filter>Source Files</Filter>
     </Text>
+    <Text Include="config.txt" />
   </ItemGroup>
 </Project>

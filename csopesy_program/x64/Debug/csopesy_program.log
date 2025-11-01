@@ -1,5 +1,1 @@
-﻿  csopesy.cpp
-C:\Users\gicac\source\repos\clavzno\csopesy\csopesy.cpp(74,15): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
-C:\Users\gicac\source\repos\clavzno\csopesy\csopesy.cpp(88,23): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
-  LINK : C:\Users\gicac\source\repos\clavzno\csopesy\x64\Debug\csopesy_program.exe not found or not built by the last incremental link; performing full link
-  csopesy_program.vcxproj -> C:\Users\gicac\source\repos\clavzno\csopesy\x64\Debug\csopesy_program.exe
+﻿  csopesy_program.vcxproj -> C:\Users\gicac\source\repos\clavzno\csopesy\x64\Debug\csopesy_program.exe
