@@ -14,6 +14,158 @@
 #include <sstream>
 
 using namespace std;
+//proposed functions
+
+enum ProcessState { READY, RUNNING, SLEEPING, FINISHED};
+
+struct Process {
+    int pid;
+    string name;
+    ProcessState state;
+    int totalInstructions;
+    int executedInstructions;
+    int sleepTicks;
+
+    Process(int id, const string& n, int instrCount):
+        pid(id), name(n), state(READY), totalInstructions(instrCount),
+        executedInstructions(0), sleepTicks(0) {}
+};
+
+struct CPUCore {
+    int id;
+    shared_ptr<Process> currentProcess;
+    int quantumRemaining; //for round robin
+
+    int activeTicks;
+    int totalTicks;
+
+    CPUCore(int coreId) : id(coreId), currentProcess(nullptr), quantumRemaining(0),
+                          activeTicks(0), totalTicks(0) {}
+
+    bool isIdle() const {
+        return currentProcess == nullptr;
+    }
+};
+
+enum SchedulerType { FCFS, RR }; //first come first server, Round Robin
+
+class Scheduler {
+private:
+    SchedulerType type;
+    int numCPUs;
+    int quantumCycles;
+    int tickCounter;
+
+    queue<shared_ptr<Process>> readyQueue;
+    vector<CPUCore> cores;
+    vector<shared_ptr<Process>> finishedList;
+
+    mutex schedMutex; //for general safety
+
+public:
+
+    Scheduler() : type(FCFS), numCPUs(1), quantumCycles(0), tickCounter(0) {}
+
+    void initialize(SchedulerType t, int cpus, int quantum) {
+        type = t;
+        numCPUs = cpus;
+        quantumCycles = quantum;
+        tickCounter = 0;
+        cores.clear();
+
+        for (int i = 0; i < numCPUs; i++) {
+            cores.emplace_back(i);
+        }
+    }
+
+    void addProcess(shared_ptr<Process> p) {
+        lock_guard<mutex> lock(schedMutex);
+        readyQueue.push(p);
+    }
+
+    void tick() {
+        lock_guard<mutex> lock(schedMutex);
+        tickCounter++;
+
+
+        for (auto& core : cores) {
+            core.totalTicks++;
+            if (core.isIdle() && !readyQueue.empty()) {
+                core.currentProcess = readyQueue.front();
+                readyQueue.pop();
+                core.currentProcess->state = RUNNING;
+                core.quantumRemaining = quantumCycles;
+            }
+        }
+
+        for (auto& core : cores) {
+            if (!core.isIdle()) {
+                core.activeTicks++;
+                auto& p = core.currentProcess;
+
+                if (p->sleepTicks > 0) {
+                    p->sleepTicks--;
+                }
+                else {
+                    p->executedInstructions++;
+
+                    if (p->executedInstructions >= p->totalInstructions) {
+                        p->state = FINISHED;
+                        finishedList.push_back(p);
+                        core.currentProcess = nullptr;
+                    }
+                    else {
+                        if (type == RR) {
+                            core.quantumRemaining--;
+                            if (core.quantumRemaining <= 0) {
+                                p->state = READY;
+                                readyQueue.push(p);
+                                core.currentProcess = nullptr;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    void printUtilization() {
+        lock_guard<mutex> lock(schedMutex);
+        cout << "\nCPU Utilization Report\n";
+        for (auto& core : cores) {
+            double utilization = 0.0;
+            if (core.totalTicks > 0)
+                utilization = (double)core.activeTicks / core.totalTicks * 100.0;
+            cout << "Core " << core.id << ": " << utilization << "% active \n";
+        }
+        cout << "----------\n";
+    }
+    void printStatus() {
+        lock_guard<mutex> lock(schedMutex);
+        cout << "\n Scheduler Status \n";
+        cout << "Ready Queue: " << readyQueue.size() << " process(es)\n";
+        cout << "Finished: " << finishedList.size() << "\n";
+
+        for (auto& core : cores) {
+            cout << "Core " << core.id << ": ";
+            if (core.isIdle()) cout << "Idle\n";
+            else cout << "Running " << core.currentProcess->name
+                << " (" << core.currentProcess->executedInstructions
+                << "/" << core.currentProcess->totalInstructions << ")\n";
+        }
+        cout << "----------\n"; //fix this part later
+    }
+    void printReadyQueue() {
+        lock_guard<mutex> lock(schedMutex);
+        queue<shared_ptr<Process>> temp = readyQueue;
+        cout << "Ready Queue Contents:\n";
+        while (!temp.empty()) {
+            auto p = temp.front(); temp.pop();
+            cout << " " << p->name << " (" << p->executedInstructions << "/"
+                << p->totalInstructions << ")\n";
+        }
+    }
+};
+
 
 // shared resources/globals
 queue<string> keyboard_queue;
@@ -29,6 +181,23 @@ string marqueeText = "CSOPESY";
 map<char, vector<string>> asciiFont;
 int letterHeight = 6; // in letters.txt, each letter is 6 lines
 
+//new
+Scheduler scheduler;
+atomic<bool> schedulerRunning(false);
+
+int batchProcessFreq = 5;
+int minIns = 5;
+int maxIns = 15;
+int delayPerExec = 200;
+
+
+int config_numCPU = 2;
+SchedulerType config_schedType = FCFS;
+int config_quantumCycles = 3;
+
+
+atomic<int> globalTick(0);
+atomic<int> processCounter(0);
 // loads ascii font from letters.txt (do not edit letters.txt)
 void loadASCIIfont(const string& filename) {
     ifstream infile(filename);
@@ -74,6 +243,9 @@ void loadASCIIfont(const string& filename) {
     int width = asciiFont['A'][0].size(); // Assume all letters have the same width
     asciiFont[' '] = vector<string>(letterHeight, string(width, ' '));
 }
+
+
+
 
 // converts plain text into ASCII art font
 string textToAscii(const string& text) {
@@ -137,6 +309,49 @@ void keyboardHandler() {
     }
 }
 
+//new
+
+void loadConfig(const string& filename) {
+    ifstream infile(filename);
+    if (!infile) {
+        cerr << "Config file not found: " << filename << ". Using defaults. \n";
+        return;
+    }
+
+    string key, value;
+    while (infile >> key) {
+        infile >> ws;
+        getline(infile, value);
+
+        if (!value.empty() && value.front() == '"') value.erase(0, 1);
+        if (!value.empty() && value.back() == '"') value.pop_back();
+
+        value.erase(0, value.find_first_not_of(" \t"));
+        value.erase(value.find_last_not_of(" \t") + 1);
+
+        if (key == "num-cpu") config_numCPU = stoi(value);
+        else if (key == "scheduler-type") {
+            if (value == "rr") config_schedType = RR;
+            else config_schedType = FCFS;
+        }
+        else if (key == "quantum-cycles") config_quantumCycles = stoi(value);
+        else if (key == "batch-process-freq") batchProcessFreq = stoi(value);
+        else if (key == "min-ins") minIns = stoi(value);
+        else if (key == "max-ins") maxIns = stoi(value);
+        else if (key == "delay-per-exec") delayPerExec = stoi(value);
+    }
+
+    cout << "[Config] Loaded successfully from " << filename << ":\n";
+    cout << " CPUs=" << config_numCPU
+        << " Type=" << (config_schedType == RR ? "RR" : "FCFS")
+        << " Quantum=" << config_quantumCycles
+        << " BatchProcessFreq=" << batchProcessFreq
+        << " Minins=" << minIns
+        << " Maxins=" << maxIns
+        << " Delay=" << delayPerExec << "ms"
+        << endl;
+
+}
 // ----- MARQUEE LOGIC -----
 void marqueeHandler() {
     int offset = 0;
@@ -191,6 +406,36 @@ void marqueeHandler() {
         }
     }
 }
+//helper only
+
+
+
+//new
+void schedulerHandler() {
+
+    while (running) {
+        if (schedulerRunning) {
+            scheduler.tick();
+
+            globalTick++;
+            if (globalTick % batchProcessFreq == 0) {
+                int pid = ++processCounter;
+                int instrCount = rand() % (maxIns - minIns + 1) + minIns;
+                auto p = make_shared<Process>(pid, "autoP" + to_string(pid), instrCount);
+                scheduler.addProcess(p);
+                cout << "[Scheduler Auto-created process " << p->name
+                    << " with " << instrCount << " instructions.\n";
+
+            }
+            this_thread::sleep_for(chrono::milliseconds(200));
+        }
+        else {
+            this_thread::sleep_for(chrono::milliseconds(100));
+
+        }
+    }
+}
+
 
 // ----- COMMAND INTERPRETER -----
 // from the template we removed the switch cases
@@ -250,8 +495,42 @@ void commandInterpreter() {
             system("cls");
             cout << "\nCommand> " << flush;
         }
+        // new set of commands
+        else if (command == "scheduler-start") {
+            if (!schedulerRunning) {
+                schedulerRunning = true;
+                globalTick = 0;
+                processCounter = 0;
+                scheduler.initialize(config_schedType, config_numCPU, config_quantumCycles);
+                cout << "Scheduler started with 2 CPUs (FCFS).\n";
+
+                for (int i = 0; i < 5; i++) {
+                    auto p = make_shared<Process>(i, "p" + to_string(i + 1), rand() % 10 + 5);
+                    scheduler.addProcess(p);
+                }
+            }
+            else {
+                cout << "Scheduler already running";
+            }
+        }
+        else if (command == "scheduler-stop") {
+            if (schedulerRunning) {
+                schedulerRunning = false;
+                cout << "Scheduler stopped.\n";
+            }
+            else {
+                cout << "Scheduler not running...\n";
+            }
+        }
+        else if (command == "report-util") {
+            scheduler.printStatus();
+        }
+
+        else if (command == "report-cpu") {
+            scheduler.printUtilization();
+        }
         else if (command == "set_text") {
-            cout << "Enter new text: ";
+            std::cout << "Enter new text: ";
             while (true) {
                 lock_guard<mutex> lock(queue_mutex);
                 if (!keyboard_queue.empty()) {
@@ -294,31 +573,31 @@ void commandInterpreter() {
             cout << "Invalid command. Type 'help' for list.\n";
             cout << "\nCommand> " << flush;
         }
+
+
+
     }
 }
 
 int main() {
+    loadConfig("config.txt");
     loadASCIIfont("letters.txt");
     marqueeText = textToAscii("CSOPESY"); // make sure the font is alr loaded
 
-    cout << "Welcome to CSOPESY! Type 'help' for commands.\n"
-        << "Group 5 Developers: \n"
-        << "Brillantes, Althea\n"
-        << "Clavano, Angelica (Jack)\n"
-        << "Narito, Ivan\n"
-        << "Version Date: October 1, 2025\n"
-        << "----------------------------------------\n"
-        << "Command> ";
+    cout  << "Command> ";
 
     // create different threads for each major component
     thread kbThread(keyboardHandler);
     thread marqueeThread(marqueeHandler);
     thread commandThread(commandInterpreter);
+    //new thread
+    thread schedulerThread(schedulerHandler);
 
     // by using join it will wait for the threads to finish before exiting main
     kbThread.join();
     marqueeThread.join();
     commandThread.join();
+    schedulerThread.join();
 
     return 0;
 }
