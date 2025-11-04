@@ -1,0 +1,71 @@
+
+
+
+------------------------------11/05/2025 03:00:17AM------------------------------
+CPU Utilization: 0%
+Cores used: 0
+Cores available: 4
+
+------------------------------
+Running processes:
+
+ Finished processes:
+------------------------------
+
+
+
+------------------------------11/05/2025 03:01:07AM------------------------------
+CPU Utilization: 99.9222%
+Cores used: 4
+Cores available: 0
+
+------------------------------
+Running processes:
+autoP5 (11/05/2025 03:01:07AM)	Core: 0	1280/1854
+autoP10 (11/05/2025 03:01:07AM)	Core: 1	1271/1561
+autoP7 (11/05/2025 03:01:07AM)	Core: 2	1278/1591
+autoP9 (11/05/2025 03:01:07AM)	Core: 3	1274/1287
+
+ Finished processes:
+penis (11/05/2025 03:01:07AM)	Finished	0/1041
+p1 (11/05/2025 03:01:07AM)	Finished	0/9
+p2 (11/05/2025 03:01:07AM)	Finished	0/6
+p4 (11/05/2025 03:01:07AM)	Finished	0/13
+autoP1 (11/05/2025 03:01:07AM)	Finished	0/1041
+autoP2 (11/05/2025 03:01:07AM)	Finished	0/1080
+autoP3 (11/05/2025 03:01:07AM)	Finished	0/1699
+autoP4 (11/05/2025 03:01:07AM)	Finished	0/1613
+autoP6 (11/05/2025 03:01:07AM)	Finished	0/1418
+p3 (11/05/2025 03:01:07AM)	Finished	9/9
+autoP8 (11/05/2025 03:01:07AM)	Finished	0/1786
+p5 (11/05/2025 03:01:07AM)	Finished	12/12
+------------------------------
+
+
+
+------------------------------11/05/2025 03:01:43AM------------------------------
+CPU Utilization: 99.9222%
+Cores used: 4
+Cores available: 0
+
+------------------------------
+Running processes:
+autoP5 (11/05/2025 03:01:43AM)	Core: 0	1280/1854
+autoP10 (11/05/2025 03:01:43AM)	Core: 1	1271/1561
+autoP7 (11/05/2025 03:01:43AM)	Core: 2	1278/1591
+autoP9 (11/05/2025 03:01:43AM)	Core: 3	1274/1287
+
+ Finished processes:
+penis (11/05/2025 03:01:43AM)	Finished	0/1041
+p1 (11/05/2025 03:01:43AM)	Finished	0/9
+p2 (11/05/2025 03:01:43AM)	Finished	0/6
+p4 (11/05/2025 03:01:43AM)	Finished	0/13
+autoP1 (11/05/2025 03:01:43AM)	Finished	0/1041
+autoP2 (11/05/2025 03:01:43AM)	Finished	0/1080
+autoP3 (11/05/2025 03:01:43AM)	Finished	0/1699
+autoP4 (11/05/2025 03:01:43AM)	Finished	0/1613
+autoP6 (11/05/2025 03:01:43AM)	Finished	0/1418
+p3 (11/05/2025 03:01:43AM)	Finished	9/9
+autoP8 (11/05/2025 03:01:43AM)	Finished	0/1786
+p5 (11/05/2025 03:01:43AM)	Finished	12/12
+------------------------------

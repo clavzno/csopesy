@@ -15,6 +15,8 @@
 #include <memory>
 #include <cstdlib>
 #include <ctime>
+// for printing the utilization report location
+#include <direct.h>
 
 using namespace std;
 //proposed functions
@@ -29,9 +31,88 @@ struct Process {
     int executedInstructions;
     int sleepTicks;
 
+    // instruction engine-related
+    vector<string> instructions; // list of instructions to execute
+    int instructionPointer = 0; // current instruction index
+    map<string, uint16_t> variables; // variable mem
+    vector<string> log; // for PRINT
+
     Process(int id, const string& n, int instrCount):
-        pid(id), name(n), state(READY), totalInstructions(instrCount),
-        executedInstructions(0), sleepTicks(0) {}
+        pid(id), 
+        name(n), \
+        state(READY), 
+        totalInstructions(instrCount),
+        executedInstructions(0),
+        sleepTicks(0) {}
+
+    // instruction engine-related
+    void executeNextInstruction() {
+        if (instructionPointer >= instructions.size()) {
+            state = FINISHED;
+            return;
+        }
+
+        stringstream ss(instructions[instructionPointer]);
+        string cmd;
+        ss >> cmd;
+
+        if (cmd == "DECLARE") {
+            string var; uint16_t val;
+            ss >> var >> val;
+            variables[var] = val;
+        }
+        else if (cmd == "ADD") {
+            string dest, a, b; ss >> dest >> a >> b;
+            uint16_t v1 = variables.count(a) ? variables[a] : stoi(a);
+            uint16_t v2 = variables.count(b) ? variables[b] : stoi(b);
+            variables[dest] = v1 + v2;
+        }
+        else if (cmd == "SUBTRACT") {
+            string dest, a, b; ss >> dest >> a >> b;
+            uint16_t v1 = variables.count(a) ? variables[a] : stoi(a);
+            uint16_t v2 = variables.count(b) ? variables[b] : stoi(b);
+            variables[dest] = v1 - v2;
+        }
+        else if (cmd == "SLEEP") {
+            int ticks; ss >> ticks;
+            sleepTicks = ticks;
+        }
+        else if (cmd == "PRINT") {
+            string msg; getline(ss, msg);
+            log.push_back(msg);
+            cout << "[" << name << "] " << msg << endl;
+        }
+        else if (cmd == "FOR") {
+            // FOR <repeatCount> <instruction something something>
+            int numRepeats;
+            ss >> numRepeats;
+            string rest; // rest of the instruction here
+            getline(ss, rest);
+            
+            // trim rest
+            while (!rest.empty() && isspace(rest.front())) {
+                rest.erase(rest.begin());
+            }
+
+            while (!rest.empty() && isspace(rest.back())) {
+                rest.pop_back();
+            }
+
+            if (!rest.empty() && numRepeats > 0) {
+                // insert the rest of the instruction for numRepeats after current position
+                vector<string> newInstr;
+                for (int i = 0; i < numRepeats; ++i)
+                    newInstr.push_back(rest);
+
+                // insert into instruction list right after current position
+                instructions.insert(instructions.begin() + instructionPointer + 1,
+                    newInstr.begin(), newInstr.end());
+            }
+        } 
+
+        instructionPointer++;
+        executedInstructions++;
+    }
 };
 
 struct CPUCore {
@@ -66,7 +147,6 @@ private:
     mutex schedMutex; //for general safety
 
 public:
-
     Scheduler() : type(FCFS), numCPUs(1), quantumCycles(0), tickCounter(0) {}
 
     void initialize(SchedulerType t, int cpus, int quantum) {
@@ -103,34 +183,76 @@ public:
 
         for (auto& core : cores) {
             if (!core.isIdle()) {
+                if (core.isIdle()) continue; // added - avoid accessing a null ptr
+
                 core.activeTicks++;
                 auto& p = core.currentProcess;
 
                 if (p->sleepTicks > 0) {
                     p->sleepTicks--;
                 }
-                else {
-                    p->executedInstructions++;
+                
+                if (!p) continue; // just in case 
 
-                    if (p->executedInstructions >= p->totalInstructions) {
+                else {
+                    try {
+                        // TODO: this may cause it to abort if the instruction was malformed 
+                        // one instruction per tick
+                        p->executeNextInstruction(); // was p->executedInstructions
+
+                        /*if (p->executedInstructions >= p->totalInstructions) {
                         p->state = FINISHED;
                         finishedList.push_back(p);
                         core.currentProcess = nullptr;
+                        }*/
                     }
-                    else {
-                        if (type == RR) {
-                            core.quantumRemaining--;
-                            if (core.quantumRemaining <= 0) {
-                                p->state = READY;
-                                readyQueue.push(p);
-                                core.currentProcess = nullptr;
-                            }
+                    catch (...) {
+                        // if the next instruction was malformed for some reason it will notify the user and mark it as finished
+                        std::cerr << "[Unknown error] in process " << p->name << std::endl;
+                        p->state = FINISHED;
+                        finishedList.push_back(p);
+                        core.currentProcess = nullptr;
+                        continue;
+                    }
+
+
+                    // changed, instruction engine-relatef
+                    // check if process finished after execution
+                    if (p->state == FINISHED) {
+                        finishedList.push_back(p);
+                        core.currentProcess = nullptr;
+                        continue;
+                    }
+
+                    // had to redo the rr handling
+                    if (type == RR) {
+                        core.quantumRemaining--;
+                        if (core.quantumRemaining <= 0) {
+                            p->state = READY;
+                            readyQueue.push(p);
+                            core.currentProcess = nullptr;
                         }
                     }
                 }
             }
         }
     }
+
+    // instructions generator - Process instructions are pre-determined and not typed by the user. E.g., randomized via scheduler-start command.
+    vector<string> generateRandomInstructions(int count) {
+        vector<string> instr;
+        vector<string> possible = {
+            "DECLARE x 5",
+            "ADD x x 1",
+            "SUBTRACT x x 1",
+            "PRINT Hello world",
+            "SLEEP 2"
+        };
+        for (int i = 0; i < count; ++i)
+            instr.push_back(possible[rand() % possible.size()]);
+        return instr;
+    }
+
     void printUtilization() {
         lock_guard<mutex> lock(schedMutex);
         cout << "\nCPU Utilization Report\n";
@@ -157,6 +279,107 @@ public:
         }
         cout << "----------\n"; //fix this part later
     }
+
+    // log cpu and process utilization report - report-util
+    string saveUtilizationFile(const string& filename) {
+        lock_guard<mutex> lock(schedMutex);
+        ofstream logfile(filename, ios::app);
+
+        // failure would return the location still
+        if (!logfile.is_open()) {
+            char absBuf[_MAX_PATH];
+            if (_fullpath(absBuf, filename.c_str(), _MAX_PATH)) {
+                return string(absBuf);
+            }
+            char* cwd = _getcwd(nullptr, 0);
+            string attempted = (cwd ? string(cwd) : string(".")) + string("\\") + filename;
+            if (cwd) free(cwd);
+            return attempted;
+        }
+
+        // calculate the core stats 
+        int coresUsed = 0;
+        for (auto& core : cores) {
+            if (!core.isIdle()) coresUsed++;
+        }
+
+        size_t coresAvailable = cores.size() - static_cast<size_t>(coresUsed);
+        // int coresAvailable = cores.size() - coresUsed;
+        double totalActive = 0, totalTicks = 0;
+
+        for (auto& core : cores) {
+            totalActive += core.activeTicks;
+            totalTicks += core.totalTicks;
+		}
+        
+        double cpuUtil = (totalTicks == 0) ? 0 : (totalActive / totalTicks) * 100.0;
+
+        // get current system time for timestamps
+        auto now = chrono::system_clock::now();
+        time_t time_now = chrono::system_clock::to_time_t(now);
+
+        // for the header time 
+        tm timeinfo{};
+        localtime_s(&timeinfo, &time_now);
+        char headerTime[30];
+        strftime(headerTime, sizeof(headerTime), "%m/%d/%Y %I:%M:%S%p", &timeinfo);
+
+        // following the sample image in specs
+        logfile << "\n\n\n";
+        logfile << "------------------------------" << headerTime << "------------------------------" << "\n";
+        logfile << "CPU Utilization: " << cpuUtil << "%\n";
+        logfile << "Cores used: " << coresUsed << "\n";
+        logfile << "Cores available: " << coresAvailable << "\n\n";
+        logfile << "------------------------------\n";
+        logfile << "Running processes:\n";
+
+        // get the running proceses info
+        for (auto& core : cores) {
+            if (!core.isIdle()) {
+                auto p = core.currentProcess;
+                tm timeinfo{};
+                localtime_s(&timeinfo, &time_now);
+                char timeStr[30];
+                strftime(timeStr, sizeof(timeStr), "%m/%d/%Y %I:%M:%S%p", &timeinfo);
+
+                // print to the file
+                logfile << p->name << " (" << timeStr << ")"
+                    << "\tCore: " << core.id << "\t"
+                    << p->executedInstructions << "/" << p->totalInstructions
+                    << "\n";
+            }
+        }
+
+        logfile << "\n Finished processes:\n";
+        for (auto& p : finishedList) {
+            tm timeinfo{};
+            localtime_s(&timeinfo, &time_now);
+            char timeStr[30];
+            strftime(timeStr, sizeof(timeStr), "%m/%d/%Y %I:%M:%S%p", &timeinfo);
+            logfile << p->name << " (" << timeStr << ")"
+                << "\tFinished\t"
+                << p->executedInstructions << "/" << p->totalInstructions
+                << "\n";
+        }
+
+        logfile << "------------------------------\n";
+        logfile.close();
+
+        // return the absolute path
+        const string logName = "csopesy-log.txt";
+        char absBuf[_MAX_PATH];
+        string absPath;
+        if (_fullpath(absBuf, logName.c_str(), _MAX_PATH)) {
+            absPath = absBuf;
+        }
+        else {
+            char* cwd = _getcwd(nullptr, 0);
+            absPath = (cwd ? string(cwd) : string(".")) + "\\" + logName;
+            if (cwd) free(cwd);
+        }
+        return absPath;
+    }
+
     void printReadyQueue() {
         lock_guard<mutex> lock(schedMutex);
         queue<shared_ptr<Process>> temp = readyQueue;
@@ -207,6 +430,7 @@ int config_quantumCycles = 3;
 
 atomic<int> globalTick(0);
 atomic<int> processCounter(0);
+
 // loads ascii font from letters.txt (do not edit letters.txt)
 void loadASCIIfont(const string& filename) {
     ifstream infile(filename);
@@ -252,9 +476,6 @@ void loadASCIIfont(const string& filename) {
     int width = asciiFont['A'][0].size(); // Assume all letters have the same width
     asciiFont[' '] = vector<string>(letterHeight, string(width, ' '));
 }
-
-
-
 
 // converts plain text into ASCII art font
 string textToAscii(const string& text) {
@@ -318,8 +539,7 @@ void keyboardHandler() {
     }
 }
 
-//new
-
+// new - configuration/initialization
 void loadConfig(const string& filename) {
     ifstream infile(filename);
     if (!infile) {
@@ -361,6 +581,7 @@ void loadConfig(const string& filename) {
         << endl;
 
 }
+
 // ----- MARQUEE LOGIC -----
 void marqueeHandler() {
     int offset = 0;
@@ -415,6 +636,7 @@ void marqueeHandler() {
         }
     }
 }
+
 //new
 void schedulerHandler() {
 
@@ -427,16 +649,17 @@ void schedulerHandler() {
                 int pid = ++processCounter;
                 int instrCount = rand() % (maxIns - minIns + 1) + minIns;
                 auto p = make_shared<Process>(pid, "autoP" + to_string(pid), instrCount);
+                p->instructions = scheduler.generateRandomInstructions(instrCount); // instruction engine-related
                 scheduler.addProcess(p);
                 cout << "[Scheduler Auto-created process " << p->name
                     << " with " << instrCount << " instructions.\n";
 
             }
-            this_thread::sleep_for(chrono::milliseconds(200));
+            // this_thread::sleep_for(chrono::milliseconds(200)); changed so we can use the config value
+            this_thread::sleep_for(chrono::milliseconds(delayPerExec));
         }
         else {
             this_thread::sleep_for(chrono::milliseconds(100));
-
         }
     }
 }
@@ -491,6 +714,7 @@ void commandInterpreter() {
                 cout << "[OK] Scheduler initialized. CPUs=" << config_numCPU
                      << " Type=" << (config_schedType == RR ? "RR" : "FCFS")
                      << " Quantum=" << config_quantumCycles << endl;
+                cout << "\nCommand> " << flush; // added
             }
 
             else if (command.rfind("screen -s", 0) == 0) {
@@ -499,11 +723,14 @@ void commandInterpreter() {
                 name.erase(remove_if(name.begin(), name.end(), ::isspace), name.end());
                 if (name.empty()) {
                     cout << "Usage: screen -s [name]\n";
+                    cout << "\nCommand> " << flush;
                 } else {
                     int pid = ++processCounter;
                     int instr = rand() % (maxIns - minIns + 1) + minIns;
                     auto p = make_shared<Process>(pid, name, instr);
+                    p->instructions = scheduler.generateRandomInstructions(instr); // instruction engine-related
                     scheduler.addProcess(p);
+
                     cout << "[New Screen] Created process: " << name
                          << " (" << instr << " instructions)\n";
                     currentProcess = p;
@@ -518,6 +745,7 @@ void commandInterpreter() {
                 name.erase(remove_if(name.begin(), name.end(), ::isspace), name.end());
                 if (name.empty()) {
                     cout << "Usage: screen -r [name]\n";
+                    cout << "\nCommand> " << flush;
                 } else {
                     bool found = false;
                     {
@@ -565,7 +793,10 @@ void commandInterpreter() {
                     cout << "Scheduler started.\n";
 
                     for (int i = 0; i < 5; i++) {
-                        auto p = make_shared<Process>(i, "p" + to_string(i + 1), rand() % 10 + 5);
+                        int instrCount = rand() % 10 + 5;
+                        // auto p = make_shared<Process>(i, "p" + to_string(i + 1), rand() % 10 + 5);
+                        auto p = make_shared<Process>(i, "p" + to_string(i + 1), instrCount);
+                        p->instructions = scheduler.generateRandomInstructions(instrCount); // instruction engine-related
                         scheduler.addProcess(p);
                     }
                 } else cout << "Scheduler already running.\n";
@@ -576,12 +807,16 @@ void commandInterpreter() {
                 if (schedulerRunning) {
                     schedulerRunning = false;
                     cout << "Scheduler stopped.\n";
+                    cout << "\nCommand> " << flush;
                 } else cout << "Scheduler not running...\n";
                 cout << "\nCommand> " << flush;
             }
 
             else if (command == "report-util") {
                 scheduler.printStatus();
+                std::string location;
+                location = scheduler.saveUtilizationFile("csopesy-log.txt");
+                cout << "Report generated at " << location << "\n";
                 cout << "\nCommand> " << flush;
             }
 
@@ -661,6 +896,13 @@ void commandInterpreter() {
                              currentProcess->state == SLEEPING ? "SLEEPING" : "FINISHED")
                          << "\n Progress: " << currentProcess->executedInstructions
                          << "/" << currentProcess->totalInstructions << "\n";
+
+                    // added instruction log
+                    if (!currentProcess->log.empty()) {
+                        cout << "\nLogs:\n";
+                        for (const auto& msg : currentProcess->log)
+                            cout << "  " << msg << "\n";
+                    }
                 } else {
                     cout << "[Error] No process attached.\n";
                 }
