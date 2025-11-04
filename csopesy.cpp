@@ -12,6 +12,9 @@
 #include <map>
 #include <vector>
 #include <sstream>
+#include <memory>
+#include <cstdlib>
+#include <ctime>
 
 using namespace std;
 //proposed functions
@@ -164,6 +167,12 @@ public:
                 << p->totalInstructions << ")\n";
         }
     }
+
+    queue<shared_ptr<Process>> getReadyQueue() {
+        lock_guard<mutex> lock(schedMutex);
+        return readyQueue; // returns a copy
+    }
+    
 };
 
 
@@ -406,10 +415,6 @@ void marqueeHandler() {
         }
     }
 }
-//helper only
-
-
-
 //new
 void schedulerHandler() {
 
@@ -440,6 +445,9 @@ void schedulerHandler() {
 // ----- COMMAND INTERPRETER -----
 // from the template we removed the switch cases
 void commandInterpreter() {
+    shared_ptr<Process> currentProcess = nullptr; // active process context
+    bool inProcessContext = false;
+
     while (running) {
         string command;
         {
@@ -455,129 +463,218 @@ void commandInterpreter() {
             continue;
         }
 
-        if (command == "help") {
-            system("cls");
-            cout << "\nAvailable commands:\n"
-                 << " help            - Show this help menu\n"
-                 << " start_marquee   - Start marquee animation\n"
-                 << " stop_marquee    - Stop marquee animation\n"
-                 << " set_text        - Change marquee text\n"
-                 << " set_speed       - Change marquee speed (ms)\n"
-                 << " exit            - Quit the emulator\n";
-            cout << "\nCommand> " << flush;
-        }
-        else if (command == "start_marquee") {
-            if (!marqueeRunning) {
-                marqueeRunning = true;
-                cout << "Marquee started.\n";
-            } else {
-                cout << "Marquee already running.\n";
+        if (!inProcessContext) {
+            // ---------- MAIN CONSOLE COMMANDS ----------
+            if (command == "help") {
+                system("cls");
+                cout << "\nAvailable commands:\n"
+                     << " help                  - Show this help menu\n"
+                     << " initialize            - Load config and initialize scheduler\n"
+                     << " screen -s [name]      - Creates a new process\n"
+                     << " screen -r [name]      - Reopens an existing process\n"
+                     << " screen -ls            - List all processes\n"
+                     << " scheduler-start       - Start scheduler\n"
+                     << " scheduler-stop        - Stop the scheduler\n"
+                     << " report-util           - Report scheduler status\n"
+                     << " report-cpu            - Report CPU utilization\n"
+                     << " start_marquee         - Start marquee animation\n"
+                     << " stop_marquee          - Stop marquee animation\n"
+                     << " set_text              - Change marquee text\n"
+                     << " set_speed             - Change marquee speed (ms)\n"
+                     << " exit                  - Quit the emulator\n";
+                cout << "\nCommand> " << flush;
             }
-        }
-        else if (command == "stop_marquee") {
-            if (marqueeRunning) {
-                marqueeRunning = false;
-                cout << "Marquee stopped.\n";
 
-                // sleep for a few secs
-                this_thread::sleep_for(chrono::milliseconds(10));
-                system("cls");
-                cout << "\nCommand> " << flush;
-            } else {
-                cout << "Marquee not running.\n";
-                // sleep for a few secs
-                this_thread::sleep_for(chrono::milliseconds(10));
-                system("cls");
-                cout << "\nCommand> " << flush;
-            }
-            // sleep for a few secs
-            this_thread::sleep_for(chrono::milliseconds(10));
-            system("cls");
-            cout << "\nCommand> " << flush;
-        }
-        // new set of commands
-        else if (command == "scheduler-start") {
-            if (!schedulerRunning) {
-                schedulerRunning = true;
-                globalTick = 0;
-                processCounter = 0;
+            else if (command == "initialize") {
+                loadConfig("config.txt");
                 scheduler.initialize(config_schedType, config_numCPU, config_quantumCycles);
-                cout << "Scheduler started with 2 CPUs (FCFS).\n";
+                cout << "[OK] Scheduler initialized. CPUs=" << config_numCPU
+                     << " Type=" << (config_schedType == RR ? "RR" : "FCFS")
+                     << " Quantum=" << config_quantumCycles << endl;
+            }
 
-                for (int i = 0; i < 5; i++) {
-                    auto p = make_shared<Process>(i, "p" + to_string(i + 1), rand() % 10 + 5);
+            else if (command.rfind("screen -s", 0) == 0) {
+                // screen -s <name>
+                string name = command.substr(9);
+                name.erase(remove_if(name.begin(), name.end(), ::isspace), name.end());
+                if (name.empty()) {
+                    cout << "Usage: screen -s [name]\n";
+                } else {
+                    int pid = ++processCounter;
+                    int instr = rand() % (maxIns - minIns + 1) + minIns;
+                    auto p = make_shared<Process>(pid, name, instr);
                     scheduler.addProcess(p);
+                    cout << "[New Screen] Created process: " << name
+                         << " (" << instr << " instructions)\n";
+                    currentProcess = p;
+                    inProcessContext = true;
+                    cout << "\n[" << name << " @process]> ";
                 }
             }
-            else {
-                cout << "Scheduler already running";
-            }
-        }
-        else if (command == "scheduler-stop") {
-            if (schedulerRunning) {
-                schedulerRunning = false;
-                cout << "Scheduler stopped.\n";
-            }
-            else {
-                cout << "Scheduler not running...\n";
-            }
-        }
-        else if (command == "report-util") {
-            scheduler.printStatus();
-        }
 
-        else if (command == "report-cpu") {
-            scheduler.printUtilization();
-        }
-        else if (command == "set_text") {
-            std::cout << "Enter new text: ";
-            while (true) {
-                lock_guard<mutex> lock(queue_mutex);
-                if (!keyboard_queue.empty()) {
-                    string plainText = keyboard_queue.front();
-                    keyboard_queue.pop();
-                    marqueeText = textToAscii(plainText);
-                    //marqueeText = keyboard_queue.front();
-                    //keyboard_queue.pop();
-                    break;
-                }
-            }
-            cout << "\nCommand> " << flush;
-        }
-        else if (command == "set_speed") {
-            cout << "Enter new speed (ms): ";
-            while (true) {
-                lock_guard<mutex> lock(queue_mutex);
-                if (!keyboard_queue.empty()) {
-                    try {
-                        marqueeSpeed = stoi(keyboard_queue.front());
-                        keyboard_queue.pop();
-                    } catch (...) {
-                        cout << "Invalid speed.\n";
+            else if (command.rfind("screen -r", 0) == 0) {
+                // reopen process by name
+                string name = command.substr(9);
+                name.erase(remove_if(name.begin(), name.end(), ::isspace), name.end());
+                if (name.empty()) {
+                    cout << "Usage: screen -r [name]\n";
+                } else {
+                    bool found = false;
+                    {
+                        // search ready queue for a process
+                        queue<shared_ptr<Process>> temp = scheduler.getReadyQueue();
+                        while (!temp.empty()) {
+                            auto p = temp.front(); temp.pop();
+                            if (p->name == name) {
+                                found = true;
+                                currentProcess = p;
+                                inProcessContext = true;
+                                break;
+                            }
+                        }
                     }
-                    break;
+                    if (found) {
+                        cout << "[Reattached] Switched to process: " << name << "\n";
+                        cout << "\n[" << name << " @process]> ";
+                    } else {
+                        cout << "[Error] Process not found.\n";
+                        cout << "\nCommand> " << flush;
+                    }
                 }
             }
-            // sleep for a few secs
-            this_thread::sleep_for(chrono::milliseconds(10));
-            system("cls");
-            cout << "\nCommand> " << flush;
-        }
-        else if (command == "exit") {
-            cout << "Exiting program...\n";
-            running = false;
-            keyboard_stop = true;
-            break;
+
+            else if (command == "screen -ls") {
+                scheduler.printReadyQueue();
+                cout << "\nCommand> " << flush;
+            }
+
+            else if (command == "start_marquee") {
+                if (!marqueeRunning) {
+                    marqueeRunning = true;
+                    cout << "Marquee started.\n";
+                } else cout << "Marquee already running.\n";
+                cout << "\nCommand> " << flush;
+            }
+
+            else if (command == "scheduler-start") {
+                if (!schedulerRunning) {
+                    schedulerRunning = true;
+                    globalTick = 0;
+                    processCounter = 0;
+                    scheduler.initialize(config_schedType, config_numCPU, config_quantumCycles);
+                    cout << "Scheduler started.\n";
+
+                    for (int i = 0; i < 5; i++) {
+                        auto p = make_shared<Process>(i, "p" + to_string(i + 1), rand() % 10 + 5);
+                        scheduler.addProcess(p);
+                    }
+                } else cout << "Scheduler already running.\n";
+                cout << "\nCommand> " << flush;
+            }
+
+            else if (command == "scheduler-stop") {
+                if (schedulerRunning) {
+                    schedulerRunning = false;
+                    cout << "Scheduler stopped.\n";
+                } else cout << "Scheduler not running...\n";
+                cout << "\nCommand> " << flush;
+            }
+
+            else if (command == "report-util") {
+                scheduler.printStatus();
+                cout << "\nCommand> " << flush;
+            }
+
+            else if (command == "report-cpu") {
+                scheduler.printUtilization();
+                cout << "\nCommand> " << flush;
+            }
+
+            else if (command == "stop_marquee") {
+                if (marqueeRunning) {
+                    marqueeRunning = false;
+                    cout << "Marquee stopped.\n";
+                } else cout << "Marquee not running.\n";
+                cout << "\nCommand> " << flush;
+            }
+
+            else if (command == "set_text") {
+                cout << "Enter new text: ";
+                while (true) {
+                    lock_guard<mutex> lock(queue_mutex);
+                    if (!keyboard_queue.empty()) {
+                        string plainText = keyboard_queue.front();
+                        keyboard_queue.pop();
+                        marqueeText = textToAscii(plainText);
+                        break;
+                    }
+                }
+                cout << "\nCommand> " << flush;
+            }
+
+            else if (command == "set_speed") {
+                cout << "Enter new speed (ms): ";
+                while (true) {
+                    lock_guard<mutex> lock(queue_mutex);
+                    if (!keyboard_queue.empty()) {
+                        try {
+                            marqueeSpeed = stoi(keyboard_queue.front());
+                            keyboard_queue.pop();
+                        } catch (...) {
+                            cout << "Invalid speed.\n";
+                        }
+                        break;
+                    }
+                }
+                cout << "\nCommand> " << flush;
+            }
+
+            else if (command == "exit") {
+                cout << "Exiting program...\n";
+                running = false;
+                keyboard_stop = true;
+                break;
+            }
+
+            else {
+                cout << "Invalid command. Type 'help' for list.\n";
+                cout << "\nCommand> " << flush;
+            }
         }
         else {
-            cout << "Invalid command. Type 'help' for list.\n";
-            cout << "\nCommand> " << flush;
+            // ---------- PROCESS CONTEXT COMMANDS ----------
+            if (command == "exit") {
+                cout << "[Detaching] Returning to main console...\n";
+                inProcessContext = false;
+                currentProcess = nullptr;
+                cout << "\nCommand> " << flush;
+            }
+
+            else if (command == "process-smi") {
+                if (currentProcess) {
+                    cout << "\nProcess Info:\n"
+                         << " Name: " << currentProcess->name << "\n"
+                         << " PID: " << currentProcess->pid << "\n"
+                         << " State: "
+                         << (currentProcess->state == READY ? "READY" :
+                             currentProcess->state == RUNNING ? "RUNNING" :
+                             currentProcess->state == SLEEPING ? "SLEEPING" : "FINISHED")
+                         << "\n Progress: " << currentProcess->executedInstructions
+                         << "/" << currentProcess->totalInstructions << "\n";
+                } else {
+                    cout << "[Error] No process attached.\n";
+                }
+                cout << "\n[" << (currentProcess ? currentProcess->name : "none") << " @process]> ";
+            }
+
+            else {
+                cout << "[Invalid] Available in process mode: process-smi, exit\n";
+                cout << "\n[" << (currentProcess ? currentProcess->name : "none") << " @process]> ";
+            }
         }
-
-
-
     }
 }
+
 
 int main() {
     loadConfig("config.txt");
