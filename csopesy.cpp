@@ -351,25 +351,56 @@ public:
         return instr;
     }
 
-    // screen -ls
+    // ------------------------------ STATUS PRINTING ------------------------------
+
+    // get actual core usage of actual running process right now, not cumulative
+    double getCurrentCPUUtilization() {
+        int coresUsed = 0;
+        for (auto& core : cores) {
+            if (!core.isIdle()) coresUsed++;
+        }
+
+        if (cores.empty()) return 0.0;
+        if (!schedulerRunning) return 0.0; // scheduler-stop = paused = should be 0% usage
+        return (static_cast<double>(coresUsed) / cores.size()) * 100.0;
+    }
+
+    // cpu utilization
     void printUtilization() {
         lock_guard<mutex> lock(schedMutex);
         cout << "\nCPU Utilization Report\n";
+
+        /*
         for (auto& core : cores) {
             double utilization = 0.0;
             if (core.totalTicks > 0)
                 utilization = (double)core.activeTicks / core.totalTicks * 100.0;
             cout << "Core " << core.id << ": " << utilization << "% active \n";
         }
-        cout << "----------\n";
+        cout << "------------------------------\n";*/
+
+        int activeCores = 0;
+        for (auto& core : cores) {
+            bool active = schedulerRunning && !core.isIdle();
+            cout << "Core " << core.id << ": " << (active ? "Active" : "Idle") << "\n";
+            if (active) activeCores++;
+        }
+
+        double utilization = (cores.empty()) ? 0.0
+            : (static_cast<double>(activeCores) / cores.size()) * 100.0;
+
+        if (!schedulerRunning) utilization = 0.0;
+        cout << "Current CPU Utilization: " << utilization << "%\n";
     }
 
+    // scheduler, core status
     void printStatus() {
         lock_guard<mutex> lock(schedMutex);
-        cout << "\n Scheduler Status \n";
+        cout << "\nScheduler Status \n";
         cout << "Ready Queue: " << readyQueue.size() << " process(es)\n";
         cout << "Finished: " << finishedList.size() << "\n";
 
+        // core utilization
         for (auto& core : cores) {
             cout << "Core " << core.id << ": ";
             if (core.isIdle()) cout << "Idle\n";
@@ -377,7 +408,7 @@ public:
                 << " (" << core.currentProcess->executedInstructions
                 << "/" << core.currentProcess->totalInstructions << ")\n";
         }
-        cout << "----------\n"; //fix this part later
+        cout << "------------------------------\n";
     }
 
     // log cpu and process utilization report - report-util
@@ -397,7 +428,7 @@ public:
             return attempted;
         }
 
-        // calculate the core stats 
+        // calculate the core stats (active cores)
         int coresUsed = 0;
         for (auto& core : cores) {
             if (!core.isIdle()) coresUsed++;
@@ -405,14 +436,20 @@ public:
 
         size_t coresAvailable = cores.size() - static_cast<size_t>(coresUsed);
         // int coresAvailable = cores.size() - coresUsed;
-        double totalActive = 0, totalTicks = 0;
+        // double totalActive = 0, totalTicks = 0;
 
+        /* commented out to prevent cumulative stats, we want the current ones, avoid using total
         for (auto& core : cores) {
             totalActive += core.activeTicks;
             totalTicks += core.totalTicks;
-        }
+        } */
 
-        double cpuUtil = (totalTicks == 0) ? 0 : (totalActive / totalTicks) * 100.0;
+        // double cpuUtil = (totalTicks == 0) ? 0 : (totalActive / totalTicks) * 100.0;
+        double cpuUtil = (cores.empty()) ? 0.0
+            : (static_cast<double>(coresUsed) / cores.size()) * 100.0;
+        
+        if (!schedulerRunning)
+            cpuUtil = 0.0;
 
         // get current system time for timestamps
         auto now = chrono::system_clock::now();
@@ -430,6 +467,7 @@ public:
         logfile << "CPU Utilization: " << cpuUtil << "%\n";
         logfile << "Cores used: " << coresUsed << "\n";
         logfile << "Cores available: " << coresAvailable << "\n\n";
+        logfile << "Core Utilization: \n";
         logfile << "------------------------------\n";
         logfile << "Running processes:\n";
 
