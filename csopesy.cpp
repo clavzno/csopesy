@@ -1,3 +1,5 @@
+// change to true if doing #4 in the submission
+bool doingnumfour = false;
 /* default config.txt
 num-cpu 4
 scheduler "rr"
@@ -131,7 +133,16 @@ struct Process {
             sleepTicks = ticks;
         }
         else if (cmd == "PRINT") {
-            string msg; getline(ss, msg);
+            string msg; 
+            getline(ss, msg);
+
+            if (doingnumfour) {
+                size_t pos = msg.find("x");
+                if (pos != string::npos && variables.count("x")) {
+                    msg.replace(pos, 1, to_string(variables["x"]));
+                }
+            }
+
             log.push_back(msg);
             // cout << "[" << name << "] " << msg << endl; // uncomment if you want hello world to print during scheduler-stop
         }
@@ -317,6 +328,30 @@ public:
         return instr;
     }
 
+    // for number 4 in demo: PRINT ADD PRINT ADD
+    // update should be in schedulerhandler p->instructions = scheduler.generateRandomInstructions(instrCount);
+    vector<string> generateTestInstructions(int count) {
+        vector<string> instr;
+
+        instr.push_back("DECLARE x 0");
+
+        // alternate bet print and add
+        for (int i = 1; i < count; ++i) {
+            if (i % 2 == 1) {
+                // odd = print
+                instr.push_back("PRINT value from: x");
+            }
+            else {
+                // even = add
+                int addVal = rand() % 10 + 1;
+                instr.push_back("ADD x x " + to_string(addVal));
+            }
+        }
+
+        return instr;
+    }
+
+    // screen -ls
     void printUtilization() {
         lock_guard<mutex> lock(schedMutex);
         cout << "\nCPU Utilization Report\n";
@@ -328,6 +363,7 @@ public:
         }
         cout << "----------\n";
     }
+
     void printStatus() {
         lock_guard<mutex> lock(schedMutex);
         cout << "\n Scheduler Status \n";
@@ -689,7 +725,13 @@ void schedulerHandler() {
                 int pid = ++processCounter;
                 int instrCount = rand() % (maxIns - minIns + 1) + minIns;
                 auto p = make_shared<Process>(pid, "autoP" + to_string(pid), instrCount);
-                p->instructions = scheduler.generateRandomInstructions(instrCount); // instruction engine-related
+
+                if (doingnumfour)
+                    p->instructions = scheduler.generateTestInstructions(instrCount); // for #4 demo
+                else {
+                    p->instructions = scheduler.generateRandomInstructions(instrCount); // instruction engine-related
+                }
+
                 scheduler.addProcess(p);
 
                 // uncomment if you want the screen to print info
@@ -701,7 +743,8 @@ void schedulerHandler() {
             this_thread::sleep_for(chrono::milliseconds(delayPerExec));
         }
         else {
-            scheduler.tick();
+            // pause it
+            // scheduler.tick();
             this_thread::sleep_for(chrono::milliseconds(100));
         }
     }
@@ -781,7 +824,13 @@ void commandInterpreter() {
                     int pid = ++processCounter;
                     int instr = rand() % (maxIns - minIns + 1) + minIns;
                     auto p = make_shared<Process>(pid, name, instr);
-                    p->instructions = scheduler.generateRandomInstructions(instr); // instruction engine-related
+
+                    if (doingnumfour)
+                        p->instructions = scheduler.generateTestInstructions(instr); // for #4 demo
+                    else {
+                        p->instructions = scheduler.generateRandomInstructions(instr); // instruction engine-related
+                    }
+                    
                     scheduler.addProcess(p);
 
                     cout << "[New Screen] Created process: " << name
@@ -855,7 +904,13 @@ void commandInterpreter() {
                         int instrCount = rand() % 10 + 5;
                         // auto p = make_shared<Process>(i, "p" + to_string(i + 1), rand() % 10 + 5);
                         auto p = make_shared<Process>(i, "p" + to_string(i + 1), instrCount);
-                        p->instructions = scheduler.generateRandomInstructions(instrCount); // instruction engine-related
+
+                        if (doingnumfour)
+                            p->instructions = scheduler.generateTestInstructions(instrCount); // for #4 demo
+                        else {
+                            p->instructions = scheduler.generateRandomInstructions(instrCount); // instruction engine-related
+                        }
+
                         scheduler.addProcess(p);
                     }
                 }

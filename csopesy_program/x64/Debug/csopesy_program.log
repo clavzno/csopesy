@@ -1,4 +1,4 @@
 ﻿  csopesy.cpp
-C:\Users\gicac\source\repos\clavzno\csopesy\csopesy.cpp(514,15): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
-C:\Users\gicac\source\repos\clavzno\csopesy\csopesy.cpp(528,23): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+C:\Users\gicac\source\repos\clavzno\csopesy\csopesy.cpp(550,15): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+C:\Users\gicac\source\repos\clavzno\csopesy\csopesy.cpp(564,23): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
   csopesy_program.vcxproj -> C:\Users\gicac\source\repos\clavzno\csopesy\x64\Debug\csopesy_program.exe
