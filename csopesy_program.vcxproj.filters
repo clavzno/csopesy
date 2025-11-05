@@ -23,6 +23,13 @@
     <Text Include="letters.txt">
       <Filter>Source Files</Filter>
     </Text>
-    <Text Include="config.txt" />
+    <Text Include="config.txt">
+      <Filter>Source Files</Filter>
+    </Text>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="README.md">
+      <Filter>Source Files</Filter>
+    </None>
   </ItemGroup>
 </Project>
