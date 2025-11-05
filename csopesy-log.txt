@@ -1,71 +1,30 @@
 
 
 
-------------------------------11/05/2025 03:00:17AM------------------------------
-CPU Utilization: 0%
-Cores used: 0
-Cores available: 4
-
-------------------------------
-Running processes:
-
- Finished processes:
-------------------------------
-
-
-
-------------------------------11/05/2025 03:01:07AM------------------------------
-CPU Utilization: 99.9222%
+------------------------------11/05/2025 03:35:18PM------------------------------
+CPU Utilization: 100%
 Cores used: 4
 Cores available: 0
 
 ------------------------------
 Running processes:
-autoP5 (11/05/2025 03:01:07AM)	Core: 0	1280/1854
-autoP10 (11/05/2025 03:01:07AM)	Core: 1	1271/1561
-autoP7 (11/05/2025 03:01:07AM)	Core: 2	1278/1591
-autoP9 (11/05/2025 03:01:07AM)	Core: 3	1274/1287
+autoP9 (11/05/2025 03:35:18PM)	Core: 0	676/1898
+autoP8 (11/05/2025 03:35:18PM)	Core: 1	956/1706
+autoP11 (11/05/2025 03:35:18PM)	Core: 2	600/1931
+autoP10 (11/05/2025 03:35:18PM)	Core: 3	647/1614
 
  Finished processes:
-penis (11/05/2025 03:01:07AM)	Finished	0/1041
-p1 (11/05/2025 03:01:07AM)	Finished	0/9
-p2 (11/05/2025 03:01:07AM)	Finished	0/6
-p4 (11/05/2025 03:01:07AM)	Finished	0/13
-autoP1 (11/05/2025 03:01:07AM)	Finished	0/1041
-autoP2 (11/05/2025 03:01:07AM)	Finished	0/1080
-autoP3 (11/05/2025 03:01:07AM)	Finished	0/1699
-autoP4 (11/05/2025 03:01:07AM)	Finished	0/1613
-autoP6 (11/05/2025 03:01:07AM)	Finished	0/1418
-p3 (11/05/2025 03:01:07AM)	Finished	9/9
-autoP8 (11/05/2025 03:01:07AM)	Finished	0/1786
-p5 (11/05/2025 03:01:07AM)	Finished	12/12
-------------------------------
-
-
-
-------------------------------11/05/2025 03:01:43AM------------------------------
-CPU Utilization: 99.9222%
-Cores used: 4
-Cores available: 0
-
-------------------------------
-Running processes:
-autoP5 (11/05/2025 03:01:43AM)	Core: 0	1280/1854
-autoP10 (11/05/2025 03:01:43AM)	Core: 1	1271/1561
-autoP7 (11/05/2025 03:01:43AM)	Core: 2	1278/1591
-autoP9 (11/05/2025 03:01:43AM)	Core: 3	1274/1287
-
- Finished processes:
-penis (11/05/2025 03:01:43AM)	Finished	0/1041
-p1 (11/05/2025 03:01:43AM)	Finished	0/9
-p2 (11/05/2025 03:01:43AM)	Finished	0/6
-p4 (11/05/2025 03:01:43AM)	Finished	0/13
-autoP1 (11/05/2025 03:01:43AM)	Finished	0/1041
-autoP2 (11/05/2025 03:01:43AM)	Finished	0/1080
-autoP3 (11/05/2025 03:01:43AM)	Finished	0/1699
-autoP4 (11/05/2025 03:01:43AM)	Finished	0/1613
-autoP6 (11/05/2025 03:01:43AM)	Finished	0/1418
-p3 (11/05/2025 03:01:43AM)	Finished	9/9
-autoP8 (11/05/2025 03:01:43AM)	Finished	0/1786
-p5 (11/05/2025 03:01:43AM)	Finished	12/12
+p2 (11/05/2025 03:35:18PM)	Finished	9/9
+p3 (11/05/2025 03:35:18PM)	Finished	13/13
+p1 (11/05/2025 03:35:18PM)	Finished	14/14
+p4 (11/05/2025 03:35:18PM)	Finished	7/7
+p5 (11/05/2025 03:35:18PM)	Finished	13/13
+sampleprocess (11/05/2025 03:35:18PM)	Finished	1041/1041
+autoP1 (11/05/2025 03:35:18PM)	Finished	1041/1041
+autoP3 (11/05/2025 03:35:18PM)	Finished	1375/1375
+autoP2 (11/05/2025 03:35:18PM)	Finished	1783/1783
+autoP5 (11/05/2025 03:35:18PM)	Finished	1537/1537
+autoP4 (11/05/2025 03:35:18PM)	Finished	1832/1832
+autoP6 (11/05/2025 03:35:18PM)	Finished	1499/1499
+autoP7 (11/05/2025 03:35:18PM)	Finished	1148/1148
 ------------------------------

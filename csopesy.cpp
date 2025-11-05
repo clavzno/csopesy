@@ -21,7 +21,7 @@
 using namespace std;
 //proposed functions
 
-enum ProcessState { READY, RUNNING, SLEEPING, FINISHED};
+enum ProcessState { READY, RUNNING, SLEEPING, FINISHED };
 
 struct Process {
     int pid;
@@ -37,17 +37,23 @@ struct Process {
     map<string, uint16_t> variables; // variable mem
     vector<string> log; // for PRINT
 
-    Process(int id, const string& n, int instrCount):
-        pid(id), 
+    Process(int id, const string& n, int instrCount) :
+        pid(id),
         name(n), \
-        state(READY), 
+        state(READY),
         totalInstructions(instrCount),
         executedInstructions(0),
-        sleepTicks(0) {}
+        sleepTicks(0) {
+    }
 
     // instruction engine-related
     void executeNextInstruction() {
+
+        //for state
+        cout << "Executing instruction at " << instructionPointer << " / " << instructions.size() << endl;
         if (instructionPointer >= instructions.size()) {
+            //for state
+            cout << "Process " << name << "finished at instructionPointer " << instructionPointer << "\n";
             state = FINISHED;
             return;
         }
@@ -88,7 +94,7 @@ struct Process {
             ss >> numRepeats;
             string rest; // rest of the instruction here
             getline(ss, rest);
-            
+
             // trim rest
             while (!rest.empty() && isspace(rest.front())) {
                 rest.erase(rest.begin());
@@ -107,11 +113,14 @@ struct Process {
                 // insert into instruction list right after current position
                 instructions.insert(instructions.begin() + instructionPointer + 1,
                     newInstr.begin(), newInstr.end());
+                //accuracy
+                //totalInstructions = instructions.size();
             }
-        } 
+        }
 
         instructionPointer++;
         executedInstructions++;
+        cout << "Executed Instructions: " << executedInstructions << endl;
     }
 };
 
@@ -124,7 +133,8 @@ struct CPUCore {
     int totalTicks;
 
     CPUCore(int coreId) : id(coreId), currentProcess(nullptr), quantumRemaining(0),
-                          activeTicks(0), totalTicks(0) {}
+        activeTicks(0), totalTicks(0) {
+    }
 
     bool isIdle() const {
         return currentProcess == nullptr;
@@ -191,7 +201,7 @@ public:
                 if (p->sleepTicks > 0) {
                     p->sleepTicks--;
                 }
-                
+
                 if (!p) continue; // just in case 
 
                 else {
@@ -241,14 +251,17 @@ public:
     // instructions generator - Process instructions are pre-determined and not typed by the user. E.g., randomized via scheduler-start command.
     vector<string> generateRandomInstructions(int count) {
         vector<string> instr;
+
+        //declare before using 
+        instr.push_back("DECLARE x 5");
+
         vector<string> possible = {
-            "DECLARE x 5",
             "ADD x x 1",
             "SUBTRACT x x 1",
             "PRINT Hello world",
             "SLEEP 2"
         };
-        for (int i = 0; i < count; ++i)
+        for (int i = 1; i < count; ++i)
             instr.push_back(possible[rand() % possible.size()]);
         return instr;
     }
@@ -310,8 +323,8 @@ public:
         for (auto& core : cores) {
             totalActive += core.activeTicks;
             totalTicks += core.totalTicks;
-		}
-        
+        }
+
         double cpuUtil = (totalTicks == 0) ? 0 : (totalActive / totalTicks) * 100.0;
 
         // get current system time for timestamps
@@ -395,7 +408,7 @@ public:
         lock_guard<mutex> lock(schedMutex);
         return readyQueue; // returns a copy
     }
-    
+
 };
 
 
@@ -491,7 +504,8 @@ string textToAscii(const string& text) {
             for (int i = 0; i < letterHeight; i++) {
                 output[i] += string(width + letterSpacing, ' ');
             }
-        } else {
+        }
+        else {
             const vector<string>& art = asciiFont[upper];
             for (int i = 0; i < letterHeight; i++) {
                 output[i] += art[i] + string(letterSpacing, ' ');
@@ -512,7 +526,7 @@ void keyboardHandler() {
     string input_buffer = "";
     while (!keyboard_stop) {
         // check for keyboard input
-        if (_kbhit()) { 
+        if (_kbhit()) {
             char key = _getch();
             if (key == '\r') {
                 // ENTER key
@@ -520,14 +534,14 @@ void keyboardHandler() {
                 keyboard_queue.push(input_buffer);
                 input_buffer.clear();
                 cout << endl;
-            } 
-            else if (key == '\b') { 
+            }
+            else if (key == '\b') {
                 // BACKSPACE key 
                 if (!input_buffer.empty()) {
                     input_buffer.pop_back();
                     cout << "\b \b";
                 }
-            } 
+            }
             else if (key >= ' ' && key <= '~') {
                 // printable ASCII
                 input_buffer += key;
@@ -593,7 +607,7 @@ void marqueeHandler() {
                 lock_guard<mutex> lock(queue_mutex);
                 asciiText = marqueeText;
             }
-            
+
             // Split asciiText into lines
             vector<string> lines;
             string line;
@@ -621,7 +635,7 @@ void marqueeHandler() {
             cout << "\nCommand> " << flush;
 
             this_thread::sleep_for(chrono::milliseconds(marqueeSpeed));
-            
+
 
             // cycle offset across the full doubled line length instead of offset = (offset + 1) % 80;
             if (!lines.empty()) {
@@ -631,7 +645,8 @@ void marqueeHandler() {
             if (loopLen > 0) {
                 offset = (offset + 1) % loopLen;
             }
-        } else {
+        }
+        else {
             this_thread::sleep_for(chrono::milliseconds(100));
         }
     }
@@ -691,20 +706,20 @@ void commandInterpreter() {
             if (command == "help") {
                 system("cls");
                 cout << "\nAvailable commands:\n"
-                     << " help                  - Show this help menu\n"
-                     << " initialize            - Load config and initialize scheduler\n"
-                     << " screen -s [name]      - Creates a new process\n"
-                     << " screen -r [name]      - Reopens an existing process\n"
-                     << " screen -ls            - List all processes\n"
-                     << " scheduler-start       - Start scheduler\n"
-                     << " scheduler-stop        - Stop the scheduler\n"
-                     << " report-util           - Report scheduler status\n"
-                     << " report-cpu            - Report CPU utilization\n"
-                     << " start_marquee         - Start marquee animation\n"
-                     << " stop_marquee          - Stop marquee animation\n"
-                     << " set_text              - Change marquee text\n"
-                     << " set_speed             - Change marquee speed (ms)\n"
-                     << " exit                  - Quit the emulator\n";
+                    << " help                  - Show this help menu\n"
+                    << " initialize            - Load config and initialize scheduler\n"
+                    << " screen -s [name]      - Creates a new process\n"
+                    << " screen -r [name]      - Reopens an existing process\n"
+                    << " screen -ls            - List all processes\n"
+                    << " scheduler-start       - Start scheduler\n"
+                    << " scheduler-stop        - Stop the scheduler\n"
+                    << " report-util           - Report scheduler status\n"
+                    << " report-cpu            - Report CPU utilization\n"
+                    << " start_marquee         - Start marquee animation\n"
+                    << " stop_marquee          - Stop marquee animation\n"
+                    << " set_text              - Change marquee text\n"
+                    << " set_speed             - Change marquee speed (ms)\n"
+                    << " exit                  - Quit the emulator\n";
                 cout << "\nCommand> " << flush;
             }
 
@@ -712,8 +727,8 @@ void commandInterpreter() {
                 loadConfig("config.txt");
                 scheduler.initialize(config_schedType, config_numCPU, config_quantumCycles);
                 cout << "[OK] Scheduler initialized. CPUs=" << config_numCPU
-                     << " Type=" << (config_schedType == RR ? "RR" : "FCFS")
-                     << " Quantum=" << config_quantumCycles << endl;
+                    << " Type=" << (config_schedType == RR ? "RR" : "FCFS")
+                    << " Quantum=" << config_quantumCycles << endl;
                 cout << "\nCommand> " << flush; // added
             }
 
@@ -724,7 +739,8 @@ void commandInterpreter() {
                 if (name.empty()) {
                     cout << "Usage: screen -s [name]\n";
                     cout << "\nCommand> " << flush;
-                } else {
+                }
+                else {
                     int pid = ++processCounter;
                     int instr = rand() % (maxIns - minIns + 1) + minIns;
                     auto p = make_shared<Process>(pid, name, instr);
@@ -732,7 +748,7 @@ void commandInterpreter() {
                     scheduler.addProcess(p);
 
                     cout << "[New Screen] Created process: " << name
-                         << " (" << instr << " instructions)\n";
+                        << " (" << instr << " instructions)\n";
                     currentProcess = p;
                     inProcessContext = true;
                     cout << "\n[" << name << " @process]> ";
@@ -746,7 +762,8 @@ void commandInterpreter() {
                 if (name.empty()) {
                     cout << "Usage: screen -r [name]\n";
                     cout << "\nCommand> " << flush;
-                } else {
+                }
+                else {
                     bool found = false;
                     {
                         // search ready queue for a process
@@ -764,7 +781,8 @@ void commandInterpreter() {
                     if (found) {
                         cout << "[Reattached] Switched to process: " << name << "\n";
                         cout << "\n[" << name << " @process]> ";
-                    } else {
+                    }
+                    else {
                         cout << "[Error] Process not found.\n";
                         cout << "\nCommand> " << flush;
                     }
@@ -780,7 +798,8 @@ void commandInterpreter() {
                 if (!marqueeRunning) {
                     marqueeRunning = true;
                     cout << "Marquee started.\n";
-                } else cout << "Marquee already running.\n";
+                }
+                else cout << "Marquee already running.\n";
                 cout << "\nCommand> " << flush;
             }
 
@@ -799,7 +818,8 @@ void commandInterpreter() {
                         p->instructions = scheduler.generateRandomInstructions(instrCount); // instruction engine-related
                         scheduler.addProcess(p);
                     }
-                } else cout << "Scheduler already running.\n";
+                }
+                else cout << "Scheduler already running.\n";
                 cout << "\nCommand> " << flush;
             }
 
@@ -808,7 +828,8 @@ void commandInterpreter() {
                     schedulerRunning = false;
                     cout << "Scheduler stopped.\n";
                     cout << "\nCommand> " << flush;
-                } else cout << "Scheduler not running...\n";
+                }
+                else cout << "Scheduler not running...\n";
                 cout << "\nCommand> " << flush;
             }
 
@@ -829,7 +850,8 @@ void commandInterpreter() {
                 if (marqueeRunning) {
                     marqueeRunning = false;
                     cout << "Marquee stopped.\n";
-                } else cout << "Marquee not running.\n";
+                }
+                else cout << "Marquee not running.\n";
                 cout << "\nCommand> " << flush;
             }
 
@@ -855,7 +877,8 @@ void commandInterpreter() {
                         try {
                             marqueeSpeed = stoi(keyboard_queue.front());
                             keyboard_queue.pop();
-                        } catch (...) {
+                        }
+                        catch (...) {
                             cout << "Invalid speed.\n";
                         }
                         break;
@@ -888,14 +911,14 @@ void commandInterpreter() {
             else if (command == "process-smi") {
                 if (currentProcess) {
                     cout << "\nProcess Info:\n"
-                         << " Name: " << currentProcess->name << "\n"
-                         << " PID: " << currentProcess->pid << "\n"
-                         << " State: "
-                         << (currentProcess->state == READY ? "READY" :
-                             currentProcess->state == RUNNING ? "RUNNING" :
-                             currentProcess->state == SLEEPING ? "SLEEPING" : "FINISHED")
-                         << "\n Progress: " << currentProcess->executedInstructions
-                         << "/" << currentProcess->totalInstructions << "\n";
+                        << " Name: " << currentProcess->name << "\n"
+                        << " PID: " << currentProcess->pid << "\n"
+                        << " State: "
+                        << (currentProcess->state == READY ? "READY" :
+                            currentProcess->state == RUNNING ? "RUNNING" :
+                            currentProcess->state == SLEEPING ? "SLEEPING" : "FINISHED")
+                        << "\n Progress: " << currentProcess->executedInstructions
+                        << "/" << currentProcess->totalInstructions << "\n";
 
                     // added instruction log
                     if (!currentProcess->log.empty()) {
@@ -903,7 +926,8 @@ void commandInterpreter() {
                         for (const auto& msg : currentProcess->log)
                             cout << "  " << msg << "\n";
                     }
-                } else {
+                }
+                else {
                     cout << "[Error] No process attached.\n";
                 }
                 cout << "\n[" << (currentProcess ? currentProcess->name : "none") << " @process]> ";
@@ -923,7 +947,7 @@ int main() {
     loadASCIIfont("letters.txt");
     marqueeText = textToAscii("CSOPESY"); // make sure the font is alr loaded
 
-    cout  << "Command> ";
+    cout << "Command> ";
 
     // create different threads for each major component
     thread kbThread(keyboardHandler);
