@@ -1,3 +1,13 @@
+/* default config.txt
+num-cpu 4
+scheduler "rr"
+quantum-cycles 5
+batch-process-freq 1
+min-ins 1000
+max-ins 2000
+delay-per-exec 0
+*/
+
 #include <iostream>
 #include <string>
 #include <queue>
@@ -82,13 +92,15 @@ struct Process {
     // instruction engine-related
     void executeNextInstruction() {
 
-        //for state
+        //for state - uncomment if you want to see them executing in real time
+        /*
         if (schedulerRunning == true) {
             cout << "Executing instruction at " << instructionPointer << " / " << instructions.size() << endl;
-        }
+        }*/ 
+
         if (instructionPointer >= instructions.size()) {
-            //for state
-            cout << "Process " << name << "finished at instructionPointer " << instructionPointer << "\n";
+            //for state - uncomment if you want to see info
+            // cout << "Process " << name << "finished at instructionPointer " << instructionPointer << "\n";
             state = FINISHED;
             return;
         }
@@ -121,7 +133,7 @@ struct Process {
         else if (cmd == "PRINT") {
             string msg; getline(ss, msg);
             log.push_back(msg);
-            cout << "[" << name << "] " << msg << endl;
+            // cout << "[" << name << "] " << msg << endl; // uncomment if you want hello world to print during scheduler-stop
         }
         else if (cmd == "FOR") {
             // FOR <repeatCount> <instruction something something>
@@ -679,8 +691,10 @@ void schedulerHandler() {
                 auto p = make_shared<Process>(pid, "autoP" + to_string(pid), instrCount);
                 p->instructions = scheduler.generateRandomInstructions(instrCount); // instruction engine-related
                 scheduler.addProcess(p);
-                cout << "[Scheduler Auto-created process " << p->name
-                    << " with " << instrCount << " instructions.\n";
+
+                // uncomment if you want the screen to print info
+                /* cout << "[Scheduler Auto-created process " << p->name
+                    << " with " << instrCount << " instructions.\n"; */
 
             }
             // this_thread::sleep_for(chrono::milliseconds(200)); changed so we can use the config value
