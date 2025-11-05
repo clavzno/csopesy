@@ -1091,11 +1091,23 @@ void commandInterpreter() {
     }
 }
 
+void printNames() {
+    cout << "\n\nWelcome to CSOPESY! Type 'help' for commands.\n"
+        << "Group 5 Developers: \n"
+        << "Brillantes, Althea\n"
+        << "Clavano, Angelica (Jack)\n"
+        << "Narito, Ivan\n"
+        << "Version Date: November 5, 2025\n"
+        << "----------------------------------------\n";
+}
+
 
 int main() {
     loadConfig("config.txt");
     loadASCIIfont("letters.txt");
     marqueeText = textToAscii("CSOPESY"); // make sure the font is alr loaded
+
+    printNames();
 
     cout << "Command> ";
 

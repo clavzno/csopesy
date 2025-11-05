@@ -26,6 +26,9 @@
     <Text Include="config.txt">
       <Filter>Source Files</Filter>
     </Text>
+    <Text Include="csopesy-log.txt">
+      <Filter>Source Files</Filter>
+    </Text>
   </ItemGroup>
   <ItemGroup>
     <None Include="README.md">
