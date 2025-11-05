@@ -1,5 +1,5 @@
 // change to true if doing #4 in the submission
-bool doingnumfour = true;
+bool doingnumfour = false;
 /* default config.txt
 num-cpu 4
 scheduler "rr"
@@ -144,7 +144,7 @@ struct Process {
             }
 
             log.push_back(msg);
-            cout << "[" << name << "] " << msg << endl; // uncomment if you want hello world to print during scheduler-stop
+            // cout << "[" << name << "] " << msg << endl; // uncomment if you want hello world to print during scheduler-stop
         }
         else if (cmd == "FOR") {
             // FOR <repeatCount> <instruction something something>
@@ -1125,4 +1125,5 @@ int main() {
     schedulerThread.join();
 
     return 0;
+
 }
