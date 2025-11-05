@@ -98,7 +98,7 @@ struct Process {
         /*
         if (schedulerRunning == true) {
             cout << "Executing instruction at " << instructionPointer << " / " << instructions.size() << endl;
-        }*/ 
+        }*/
 
         if (instructionPointer >= instructions.size()) {
             //for state - uncomment if you want to see info
@@ -133,7 +133,7 @@ struct Process {
             sleepTicks = ticks;
         }
         else if (cmd == "PRINT") {
-            string msg; 
+            string msg;
             getline(ss, msg);
 
             if (doingnumfour) {
@@ -830,7 +830,7 @@ void commandInterpreter() {
                     else {
                         p->instructions = scheduler.generateRandomInstructions(instr); // instruction engine-related
                     }
-                    
+
                     scheduler.addProcess(p);
 
                     cout << "[New Screen] Created process: " << name
@@ -931,6 +931,8 @@ void commandInterpreter() {
 
             else if (command == "report-util") {
                 scheduler.printStatus();
+                //add-on
+                scheduler.printUtilization();
                 std::string location;
                 location = scheduler.saveUtilizationFile("csopesy-log.txt");
                 cout << "Report generated at " << location << "\n";
