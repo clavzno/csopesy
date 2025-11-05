@@ -22,6 +22,39 @@ using namespace std;
 //proposed functions
 
 enum ProcessState { READY, RUNNING, SLEEPING, FINISHED };
+// shared resources/globals
+queue<string> keyboard_queue;
+mutex queue_mutex;
+
+atomic<bool> running(true);
+atomic<bool> keyboard_stop(false);
+atomic<bool> marqueeRunning(false);
+atomic<int> marqueeSpeed(200);
+
+//dummy processes
+//bool dummyProcessEnabled = true;
+
+string marqueeText = "CSOPESY";
+// text to ascii
+map<char, vector<string>> asciiFont;
+int letterHeight = 6; // in letters.txt, each letter is 6 lines
+
+//new
+//
+//atomic<bool> schedulerRunning(false);
+
+int batchProcessFreq = 5;
+int minIns = 5;
+int maxIns = 15;
+int delayPerExec = 200;
+
+
+
+atomic<int> globalTick(0);
+atomic<int> processCounter(0);
+
+//
+atomic<bool> schedulerRunning(false);
 
 struct Process {
     int pid;
@@ -50,7 +83,9 @@ struct Process {
     void executeNextInstruction() {
 
         //for state
-        cout << "Executing instruction at " << instructionPointer << " / " << instructions.size() << endl;
+        if (schedulerRunning == true) {
+            cout << "Executing instruction at " << instructionPointer << " / " << instructions.size() << endl;
+        }
         if (instructionPointer >= instructions.size()) {
             //for state
             cout << "Process " << name << "finished at instructionPointer " << instructionPointer << "\n";
@@ -120,7 +155,10 @@ struct Process {
 
         instructionPointer++;
         executedInstructions++;
-        cout << "Executed Instructions: " << executedInstructions << endl;
+
+        //if (schedulerRunning == true) {
+        //    cout << "Executed Instructions: " << executedInstructions << endl;
+        //}
     }
 };
 
@@ -247,6 +285,7 @@ public:
             }
         }
     }
+
 
     // instructions generator - Process instructions are pre-determined and not typed by the user. E.g., randomized via scheduler-start command.
     vector<string> generateRandomInstructions(int count) {
@@ -411,38 +450,12 @@ public:
 
 };
 
-
-// shared resources/globals
-queue<string> keyboard_queue;
-mutex queue_mutex;
-
-atomic<bool> running(true);
-atomic<bool> keyboard_stop(false);
-atomic<bool> marqueeRunning(false);
-atomic<int> marqueeSpeed(200);
-
-string marqueeText = "CSOPESY";
-// text to ascii
-map<char, vector<string>> asciiFont;
-int letterHeight = 6; // in letters.txt, each letter is 6 lines
-
-//new
 Scheduler scheduler;
-atomic<bool> schedulerRunning(false);
-
-int batchProcessFreq = 5;
-int minIns = 5;
-int maxIns = 15;
-int delayPerExec = 200;
-
 
 int config_numCPU = 2;
 SchedulerType config_schedType = FCFS;
 int config_quantumCycles = 3;
 
-
-atomic<int> globalTick(0);
-atomic<int> processCounter(0);
 
 // loads ascii font from letters.txt (do not edit letters.txt)
 void loadASCIIfont(const string& filename) {
@@ -632,7 +645,7 @@ void marqueeHandler() {
                 cout << view << "\n";
             }
 
-            cout << "\nroot:\\> " << flush;
+            cout << "\nCommand> " << flush;
 
             this_thread::sleep_for(chrono::milliseconds(marqueeSpeed));
 
@@ -674,6 +687,7 @@ void schedulerHandler() {
             this_thread::sleep_for(chrono::milliseconds(delayPerExec));
         }
         else {
+            scheduler.tick();
             this_thread::sleep_for(chrono::milliseconds(100));
         }
     }
@@ -707,7 +721,7 @@ void commandInterpreter() {
             // enforce initialization before other commands
             if (!initialized && command != "initialize" && command != "help" && command != "exit") {
                 cout << "[Error] Please run 'initialize' first before any other command.\n";
-                cout << "\nroot:\\> " << flush;
+                cout << "\nCommand> " << flush;
                 continue;
             }
 
@@ -716,16 +730,19 @@ void commandInterpreter() {
                 system("cls");
                 cout << "\nAvailable commands:\n"
                     << " help                  - Show this help menu\n"
-                    << " initialize            - Load config and initialize scheduler\n"
                     << " screen -s [name]      - Creates a new process\n"
                     << " screen -r [name]      - Reopens an existing process\n"
-                    << " screen -ls            - List all running processes\n"
+                    << " screen -ls            - List all processes\n"
                     << " scheduler-start       - Start scheduler\n"
                     << " scheduler-stop        - Stop the scheduler\n"
                     << " report-util           - Report scheduler status\n"
                     << " report-cpu            - Report CPU utilization\n"
-                    << " exit                  - terminates console or return to main menu\n";
-                cout << "\nroot:\\> " << flush;
+                    << " start_marquee         - Start marquee animation\n"
+                    << " stop_marquee          - Stop marquee animation\n"
+                    << " set_text              - Change marquee text\n"
+                    << " set_speed             - Change marquee speed (ms)\n"
+                    << " exit                  - Quit the emulator\n";
+                cout << "\nCommand> " << flush;
             }
 
             else if (command == "initialize") {
@@ -735,7 +752,7 @@ void commandInterpreter() {
                 cout << "[OK] Scheduler initialized. CPUs=" << config_numCPU
                     << " Type=" << (config_schedType == RR ? "RR" : "FCFS")
                     << " Quantum=" << config_quantumCycles << endl;
-                cout << "\nroot:\\> " << flush; // added
+                cout << "\nCommand> " << flush; // added
             }
 
             else if (command.rfind("screen -s", 0) == 0) {
@@ -744,7 +761,7 @@ void commandInterpreter() {
                 name.erase(remove_if(name.begin(), name.end(), ::isspace), name.end());
                 if (name.empty()) {
                     cout << "Usage: screen -s [name]\n";
-                    cout << "\nroot:\\> " << flush;
+                    cout << "\nCommand> " << flush;
                 }
                 else {
                     int pid = ++processCounter;
@@ -767,7 +784,7 @@ void commandInterpreter() {
                 name.erase(remove_if(name.begin(), name.end(), ::isspace), name.end());
                 if (name.empty()) {
                     cout << "Usage: screen -r [name]\n";
-                    cout << "\nroot:\\> " << flush;
+                    cout << "\nCommand> " << flush;
                 }
                 else {
                     bool found = false;
@@ -776,15 +793,15 @@ void commandInterpreter() {
                         queue<shared_ptr<Process>> temp = scheduler.getReadyQueue();
 
                         while (!temp.empty()) {
-                            auto p = temp.front(); 
+                            auto p = temp.front();
                             temp.pop();
-                            if (p->name == name && p->state != FINISHED){ // added check to prevent reataching to finished processes
-                                    found = true;
-                                    currentProcess = p;
-                                    inProcessContext = true;
-                                    break;
-                                }
+                            if (p->name == name && p->state != FINISHED) { // added check to prevent reataching to finished processes
+                                found = true;
+                                currentProcess = p;
+                                inProcessContext = true;
+                                break;
                             }
+                        }
                     }
                     if (found) {
                         cout << "[Reattached] Switched to process: " << name << "\n";
@@ -792,7 +809,7 @@ void commandInterpreter() {
                     }
                     else {
                         cout << "[Error] Process not found.\n";
-                        cout << "\nroot:\\> " << flush;
+                        cout << "\nCommand> " << flush;
                     }
                 }
             }
@@ -800,7 +817,7 @@ void commandInterpreter() {
             else if (command == "screen -ls") {
                 scheduler.printStatus(); // shows cores + ready/finished
                 scheduler.printUtilization(); // adds core utilization summary
-                cout << "\nroot:\\> " << flush;
+                cout << "\nCommand> " << flush;
             }
 
             else if (command == "start_marquee") {
@@ -809,7 +826,7 @@ void commandInterpreter() {
                     cout << "Marquee started.\n";
                 }
                 else cout << "Marquee already running.\n";
-                cout << "\nroot:\\> " << flush;
+                cout << "\nCommand> " << flush;
             }
 
             else if (command == "scheduler-start") {
@@ -829,17 +846,18 @@ void commandInterpreter() {
                     }
                 }
                 else cout << "Scheduler already running.\n";
-                cout << "\nroot:\\> " << flush;
+                cout << "\nCommand> " << flush;
             }
 
             else if (command == "scheduler-stop") {
                 if (schedulerRunning) {
                     schedulerRunning = false;
+
                     cout << "Scheduler stopped.\n";
-                    cout << "\nroot:\\> " << flush;
+                    cout << "\nCommand> " << flush;
                 }
                 else cout << "Scheduler not running...\n";
-                cout << "\nroot:\\> " << flush;
+                cout << "\nCommand> " << flush;
             }
 
             else if (command == "report-util") {
@@ -847,12 +865,12 @@ void commandInterpreter() {
                 std::string location;
                 location = scheduler.saveUtilizationFile("csopesy-log.txt");
                 cout << "Report generated at " << location << "\n";
-                cout << "\nroot:\\> " << flush;
+                cout << "\nCommand> " << flush;
             }
 
             else if (command == "report-cpu") {
                 scheduler.printUtilization();
-                cout << "\nroot:\\> " << flush;
+                cout << "\nCommand> " << flush;
             }
 
             else if (command == "stop_marquee") {
@@ -861,7 +879,7 @@ void commandInterpreter() {
                     cout << "Marquee stopped.\n";
                 }
                 else cout << "Marquee not running.\n";
-                cout << "\nroot:\\> " << flush;
+                cout << "\nCommand> " << flush;
             }
 
             else if (command == "set_text") {
@@ -875,7 +893,7 @@ void commandInterpreter() {
                         break;
                     }
                 }
-                cout << "\nroot:\\> " << flush;
+                cout << "\nCommand> " << flush;
             }
 
             else if (command == "set_speed") {
@@ -893,7 +911,7 @@ void commandInterpreter() {
                         break;
                     }
                 }
-                cout << "\nroot:\\> " << flush;
+                cout << "\nCommand> " << flush;
             }
 
             else if (command == "exit") {
@@ -905,7 +923,7 @@ void commandInterpreter() {
 
             else {
                 cout << "Invalid command. Type 'help' for list.\n";
-                cout << "\nroot:\\> " << flush;
+                cout << "\nCommand> " << flush;
             }
         }
         else {
@@ -914,7 +932,7 @@ void commandInterpreter() {
                 cout << "[Detaching] Returning to main console...\n";
                 inProcessContext = false;
                 currentProcess = nullptr;
-                cout << "\nroot:\\> " << flush;
+                cout << "\nCommand> " << flush;
             }
 
             else if (command == "process-smi") {
@@ -949,7 +967,8 @@ void commandInterpreter() {
                         for (const auto& msg : currentProcess->log)
                             cout << "  " << msg << "\n";
                     }
-                } else {
+                }
+                else {
                     cout << "[Error] No process attached.\n";
                 }
 
@@ -969,17 +988,7 @@ int main() {
     loadASCIIfont("letters.txt");
     marqueeText = textToAscii("CSOPESY"); // make sure the font is alr loaded
 
-
-    cout << "Welcome to CSOPESY! Type 'help' for commands.\n"
-        << "Group 5 Developers: \n"
-        << "Brillantes, Althea\n"
-        << "Clavano, Angelica (Jack)\n"
-        << "Narito, Ivan\n"
-        << "Version Date: November 5, 2025\n"
-        << "----------------------------------------\n";
-
-    cout << "\nroot:\\> ";
-
+    cout << "Command> ";
 
     // create different threads for each major component
     thread kbThread(keyboardHandler);
