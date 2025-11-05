@@ -685,6 +685,7 @@ void schedulerHandler() {
 void commandInterpreter() {
     shared_ptr<Process> currentProcess = nullptr; // active process context
     bool inProcessContext = false;
+    bool initialized = false; // must be initialized before use
 
     while (running) {
         string command;
@@ -703,11 +704,18 @@ void commandInterpreter() {
 
         if (!inProcessContext) {
             // ---------- MAIN CONSOLE COMMANDS ----------
+            // enforce initialization before other commands
+            if (!initialized && command != "initialize" && command != "help" && command != "exit") {
+                cout << "[Error] Please run 'initialize' first before any other command.\n";
+                cout << "\nCommand> " << flush;
+                continue;
+            }
+
+            //begin command handling
             if (command == "help") {
                 system("cls");
                 cout << "\nAvailable commands:\n"
                     << " help                  - Show this help menu\n"
-                    << " initialize            - Load config and initialize scheduler\n"
                     << " screen -s [name]      - Creates a new process\n"
                     << " screen -r [name]      - Reopens an existing process\n"
                     << " screen -ls            - List all processes\n"
@@ -726,6 +734,7 @@ void commandInterpreter() {
             else if (command == "initialize") {
                 loadConfig("config.txt");
                 scheduler.initialize(config_schedType, config_numCPU, config_quantumCycles);
+                initialized = true; // mark as ready
                 cout << "[OK] Scheduler initialized. CPUs=" << config_numCPU
                     << " Type=" << (config_schedType == RR ? "RR" : "FCFS")
                     << " Quantum=" << config_quantumCycles << endl;
@@ -768,15 +777,17 @@ void commandInterpreter() {
                     {
                         // search ready queue for a process
                         queue<shared_ptr<Process>> temp = scheduler.getReadyQueue();
+
                         while (!temp.empty()) {
-                            auto p = temp.front(); temp.pop();
-                            if (p->name == name) {
-                                found = true;
-                                currentProcess = p;
-                                inProcessContext = true;
-                                break;
+                            auto p = temp.front(); 
+                            temp.pop();
+                            if (p->name == name && p->state != FINISHED){ // added check to prevent reataching to finished processes
+                                    found = true;
+                                    currentProcess = p;
+                                    inProcessContext = true;
+                                    break;
+                                }
                             }
-                        }
                     }
                     if (found) {
                         cout << "[Reattached] Switched to process: " << name << "\n";
@@ -790,7 +801,8 @@ void commandInterpreter() {
             }
 
             else if (command == "screen -ls") {
-                scheduler.printReadyQueue();
+                scheduler.printStatus(); // shows cores + ready/finished
+                scheduler.printUtilization(); // adds core utilization summary
                 cout << "\nCommand> " << flush;
             }
 
@@ -910,32 +922,45 @@ void commandInterpreter() {
 
             else if (command == "process-smi") {
                 if (currentProcess) {
-                    cout << "\nProcess Info:\n"
-                        << " Name: " << currentProcess->name << "\n"
-                        << " PID: " << currentProcess->pid << "\n"
-                        << " State: "
-                        << (currentProcess->state == READY ? "READY" :
-                            currentProcess->state == RUNNING ? "RUNNING" :
-                            currentProcess->state == SLEEPING ? "SLEEPING" : "FINISHED")
-                        << "\n Progress: " << currentProcess->executedInstructions
+                    cout << "\nProcess Info:\n";
+                    cout << " Name: " << currentProcess->name << "\n";
+                    cout << " PID: " << currentProcess->pid << "\n";
+
+                    // Replace the ternary operators with clear logic
+                    string stateStr;
+                    if (currentProcess->state == READY)
+                        stateStr = "READY";
+                    else if (currentProcess->state == RUNNING)
+                        stateStr = "RUNNING";
+                    else if (currentProcess->state == SLEEPING)
+                        stateStr = "SLEEPING";
+                    else
+                        stateStr = "FINISHED";
+
+                    cout << " State: " << stateStr << "\n";
+                    cout << " Progress: " << currentProcess->executedInstructions
                         << "/" << currentProcess->totalInstructions << "\n";
 
-                    // added instruction log
+                    // Add finished notice
+                    if (currentProcess->state == FINISHED) {
+                        cout << "Status: Finished!\n";
+                    }
+
+                    // Added instruction log
                     if (!currentProcess->log.empty()) {
                         cout << "\nLogs:\n";
                         for (const auto& msg : currentProcess->log)
                             cout << "  " << msg << "\n";
                     }
-                }
-                else {
+                } else {
                     cout << "[Error] No process attached.\n";
                 }
-                cout << "\n[" << (currentProcess ? currentProcess->name : "none") << " @process]> ";
-            }
 
-            else {
-                cout << "[Invalid] Available in process mode: process-smi, exit\n";
-                cout << "\n[" << (currentProcess ? currentProcess->name : "none") << " @process]> ";
+                // Keep prompt consistent
+                if (currentProcess)
+                    cout << "\n[" << currentProcess->name << " @process]> ";
+                else
+                    cout << "\n[none @process]> ";
             }
         }
     }
