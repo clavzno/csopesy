@@ -31,7 +31,6 @@ delay-per-exec 0
 #include <direct.h>
 
 using namespace std;
-//proposed functions
 
 enum ProcessState { READY, RUNNING, SLEEPING, FINISHED };
 // shared resources/globals
@@ -43,8 +42,8 @@ atomic<bool> keyboard_stop(false);
 atomic<bool> marqueeRunning(false);
 atomic<int> marqueeSpeed(200);
 
-//dummy processes
-//bool dummyProcessEnabled = true;
+// dummy processes
+// bool dummyProcessEnabled = true;
 
 string marqueeText = "CSOPESY";
 // text to ascii
@@ -52,7 +51,6 @@ map<char, vector<string>> asciiFont;
 int letterHeight = 6; // in letters.txt, each letter is 6 lines
 
 //new
-//
 //atomic<bool> schedulerRunning(false);
 
 int batchProcessFreq = 5;
@@ -60,12 +58,9 @@ int minIns = 5;
 int maxIns = 15;
 int delayPerExec = 200;
 
-
-
 atomic<int> globalTick(0);
 atomic<int> processCounter(0);
 
-//
 atomic<bool> schedulerRunning(false);
 
 struct Process {
@@ -143,7 +138,7 @@ struct Process {
                 }
             }
 
-            // output should be shown via process-smi
+            // output should be shown via screen-r process-smi
             log.push_back(msg);
         }
         else if (cmd == "FOR") {
@@ -169,16 +164,14 @@ struct Process {
                     newInstr.push_back(rest);
 
                 // insert into instruction list right after current position
-                instructions.insert(instructions.begin() + instructionPointer + 1,
-                    newInstr.begin(), newInstr.end());
-                //accuracy
-                //totalInstructions = instructions.size();
+                instructions.insert(instructions.begin() + instructionPointer + 1, newInstr.begin(), newInstr.end());
             }
         }
 
         instructionPointer++;
         executedInstructions++;
 
+        /* uncomment if you want to see the executed instructions */
         //if (schedulerRunning == true) {
         //    cout << "Executed Instructions: " << executedInstructions << endl;
         //}
@@ -188,7 +181,7 @@ struct Process {
 struct CPUCore {
     int id;
     shared_ptr<Process> currentProcess;
-    int quantumRemaining; //for round robin
+    int quantumRemaining; // for round robin
 
     int activeTicks;
     int totalTicks;
@@ -202,7 +195,7 @@ struct CPUCore {
     }
 };
 
-enum SchedulerType { FCFS, RR }; //first come first server, Round Robin
+enum SchedulerType { FCFS, RR }; // FCFS, round robin
 
 class Scheduler {
 private:
@@ -215,7 +208,7 @@ private:
     vector<CPUCore> cores;
     vector<shared_ptr<Process>> finishedList;
 
-    mutex schedMutex; //for general safety
+    mutex schedMutex; // for general safety
 
 public:
     Scheduler() : type(FCFS), numCPUs(1), quantumCycles(0), tickCounter(0) {}
@@ -254,7 +247,7 @@ public:
 
         for (auto& core : cores) {
             if (!core.isIdle()) {
-                if (core.isIdle()) continue; // added - avoid accessing a null ptr
+                if (core.isIdle()) continue; // avoid accessing a null ptr (stops the entire scheduler)
 
                 core.activeTicks++;
                 auto& p = core.currentProcess;
@@ -267,15 +260,9 @@ public:
 
                 else {
                     try {
-                        // TODO: this may cause it to abort if the instruction was malformed 
+                        // this may cause it to abort if the instruction was malformed 
                         // one instruction per tick
                         p->executeNextInstruction(); // was p->executedInstructions
-
-                        /*if (p->executedInstructions >= p->totalInstructions) {
-                        p->state = FINISHED;
-                        finishedList.push_back(p);
-                        core.currentProcess = nullptr;
-                        }*/
                     }
                     catch (...) {
                         // if the next instruction was malformed for some reason it will notify the user and mark it as finished
@@ -286,8 +273,7 @@ public:
                         continue;
                     }
 
-
-                    // changed, instruction engine-relatef
+                    // changed, instruction engine-related
                     // check if process finished after execution
                     if (p->state == FINISHED) {
                         finishedList.push_back(p);
@@ -310,7 +296,7 @@ public:
     }
 
 
-    // instructions generator - Process instructions are pre-determined and not typed by the user. E.g., randomized via scheduler-start command.
+    // instructions generator - process instructions are pre-determined and not typed by the user. ex. randomized via scheduler-start command.
     vector<string> generateRandomInstructions(int count) {
         vector<string> instr;
 
@@ -323,6 +309,7 @@ public:
             "PRINT Hello world",
             "SLEEP 2"
         };
+
         for (int i = 1; i < count; ++i)
             instr.push_back(possible[rand() % possible.size()]);
         return instr;
@@ -369,15 +356,6 @@ public:
     void printUtilization() {
         lock_guard<mutex> lock(schedMutex);
         cout << "\nCPU Utilization Report\n";
-
-        /*
-        for (auto& core : cores) {
-            double utilization = 0.0;
-            if (core.totalTicks > 0)
-                utilization = (double)core.activeTicks / core.totalTicks * 100.0;
-            cout << "Core " << core.id << ": " << utilization << "% active \n";
-        }
-        cout << "------------------------------\n";*/
 
         int activeCores = 0;
         for (auto& core : cores) {
@@ -435,16 +413,7 @@ public:
         }
 
         size_t coresAvailable = cores.size() - static_cast<size_t>(coresUsed);
-        // int coresAvailable = cores.size() - coresUsed;
-        // double totalActive = 0, totalTicks = 0;
 
-        /* commented out to prevent cumulative stats, we want the current ones, avoid using total
-        for (auto& core : cores) {
-            totalActive += core.activeTicks;
-            totalTicks += core.totalTicks;
-        } */
-
-        // double cpuUtil = (totalTicks == 0) ? 0 : (totalActive / totalTicks) * 100.0;
         double cpuUtil = (cores.empty()) ? 0.0
             : (static_cast<double>(coresUsed) / cores.size()) * 100.0;
         
@@ -612,7 +581,7 @@ string textToAscii(const string& text) {
         }
     }
 
-    // joine verything into one big string
+    // join everything into one big string
     stringstream ss;
     for (string& line : output) {
         ss << line << "\n";
@@ -652,7 +621,7 @@ void keyboardHandler() {
     }
 }
 
-// new - configuration/initialization
+// configuration/initialization
 void loadConfig(const string& filename) {
     ifstream infile(filename);
     if (!infile) {
@@ -751,7 +720,6 @@ void marqueeHandler() {
     }
 }
 
-//new
 void schedulerHandler() {
 
     while (running) {
@@ -777,7 +745,7 @@ void schedulerHandler() {
                     << " with " << instrCount << " instructions.\n"; */
 
             }
-            // this_thread::sleep_for(chrono::milliseconds(200)); changed so we can use the config value
+            // changed so we can use the config value delay-per-exec that's in config.txt
             this_thread::sleep_for(chrono::milliseconds(delayPerExec));
         }
         else {
@@ -942,7 +910,6 @@ void commandInterpreter() {
 
                     for (int i = 0; i < 5; i++) {
                         int instrCount = rand() % 10 + 5;
-                        // auto p = make_shared<Process>(i, "p" + to_string(i + 1), rand() % 10 + 5);
                         auto p = make_shared<Process>(i, "p" + to_string(i + 1), instrCount);
 
                         if (doingnumfour)
@@ -1083,7 +1050,7 @@ void commandInterpreter() {
                     cout << "[Error] No process attached.\n";
                 }
 
-                // Keep prompt consistent
+                // keep prompt consistent
                 if (currentProcess)
                     cout << "\n[" << currentProcess->name << " @process]> ";
                 else
@@ -1093,23 +1060,13 @@ void commandInterpreter() {
     }
 }
 
-void printNames() {
-    cout << "\n\nWelcome to CSOPESY! Type 'help' for commands.\n"
-        << "Group 5 Developers: \n"
-        << "Brillantes, Althea\n"
-        << "Clavano, Angelica (Jack)\n"
-        << "Narito, Ivan\n"
-        << "Version Date: November 30, 2025\n"
-        << "----------------------------------------\n";
-}
-
 
 int main() {
     loadConfig("config.txt");
     loadASCIIfont("letters.txt");
     marqueeText = textToAscii("CSOPESY"); // make sure the font is alr loaded
 
-    printNames();
+    //printNames();
 
     cout << "Command> ";
 
@@ -1127,5 +1084,4 @@ int main() {
     schedulerThread.join();
 
     return 0;
-
 }
