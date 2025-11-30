@@ -63,6 +63,28 @@ atomic<int> processCounter(0);
 
 atomic<bool> schedulerRunning(false);
 
+atomic<bool> systemInitialized(false);
+
+// ------ MO2 memory manager ------
+struct MemoryStats {
+    int totalMemory = 0;
+    int usedMemory = 0;
+    int freeMemory = 0;
+    long long numPagedIn = 0;
+    long long numPagedOut = 0;
+};
+
+struct VmCpuStats {
+    long long idleCpuTicks = 0;
+    long long activeCpuTicks = 0;
+    long long totalCpuTicks = 0;
+};
+
+MemoryStats g_memoryStats;
+VmCpuStats  g_vmCpuStats;
+
+// ------ END MO2 memory manager ------
+
 struct Process {
     int pid;
     string name;
@@ -293,6 +315,22 @@ public:
                 }
             }
         }
+    }
+
+    // MO2
+    struct SchedulerTickSnapshot {
+        long long activeTicks = 0;
+        long long totalTicks = 0;
+    };
+
+    SchedulerTickSnapshot getTickSnapshot() {
+        lock_guard<mutex> lock(schedMutex);
+        SchedulerTickSnapshot snap;
+        for (auto& core : cores) {
+            snap.activeTicks += core.activeTicks;
+            snap.totalTicks += core.totalTicks;
+        }
+        return snap;
     }
 
 
@@ -621,8 +659,15 @@ void keyboardHandler() {
     }
 }
 
+// global memory config from MO2
+int config_maxOverallMem = 0;
+int config_memPerFrame = 0;
+int config_minMemPerProc = 0;
+int config_maxMemPerProc = 0;
+
 // configuration/initialization
 void loadConfig(const string& filename) {
+
     ifstream infile(filename);
     if (!infile) {
         cerr << "Config file not found: " << filename << ". Using defaults. \n";
@@ -650,6 +695,10 @@ void loadConfig(const string& filename) {
         else if (key == "min-ins") minIns = stoi(value);
         else if (key == "max-ins") maxIns = stoi(value);
         else if (key == "delay-per-exec") delayPerExec = stoi(value);
+        else if (key == "max-overall-mem")  config_maxOverallMem = stoi(value);
+        else if (key == "mem-per-frame")    config_memPerFrame = stoi(value);
+        else if (key == "min-mem-per-proc") config_minMemPerProc = stoi(value);
+        else if (key == "max-mem-per-proc") config_maxMemPerProc = stoi(value);
     }
 
     cout << "[Config] Loaded successfully from " << filename << ":\n";
@@ -660,8 +709,11 @@ void loadConfig(const string& filename) {
         << " Minins=" << minIns
         << " Maxins=" << maxIns
         << " Delay=" << delayPerExec << "ms"
+        << " MaxMem=" << config_maxOverallMem
+        << " FrameSize=" << config_memPerFrame
+        << " MinMemProc=" << config_minMemPerProc
+        << " MaxMemProc=" << config_maxMemPerProc
         << endl;
-
 }
 
 // ----- MARQUEE LOGIC -----
@@ -762,7 +814,7 @@ void schedulerHandler() {
 void commandInterpreter() {
     shared_ptr<Process> currentProcess = nullptr; // active process context
     bool inProcessContext = false;
-    bool initialized = false; // must be initialized before use
+	// bool initialized = false; // must be initialized before use - commented out bc we have systemInitialized
 
     while (running) {
         string command;
@@ -782,7 +834,7 @@ void commandInterpreter() {
         if (!inProcessContext) {
             // ---------- MAIN CONSOLE COMMANDS ----------
             // enforce initialization before other commands
-            if (!initialized && command != "initialize" && command != "help" && command != "exit") {
+            if (!systemInitialized && command != "initialize" && command != "help" && command != "exit") {
                 cout << "[Error] Please run 'initialize' first before any other command.\n";
                 cout << "\nCommand> " << flush;
                 continue;
@@ -811,7 +863,7 @@ void commandInterpreter() {
             else if (command == "initialize") {
                 loadConfig("config.txt");
                 scheduler.initialize(config_schedType, config_numCPU, config_quantumCycles);
-                initialized = true; // mark as ready
+                systemInitialized = true; // mark as ready
                 cout << "[OK] Scheduler initialized. CPUs=" << config_numCPU
                     << " Type=" << (config_schedType == RR ? "RR" : "FCFS")
                     << " Quantum=" << config_quantumCycles << endl;
@@ -1045,6 +1097,46 @@ void commandInterpreter() {
                         for (const auto& msg : currentProcess->log)
                             cout << "  " << msg << "\n";
                     }
+
+                    // MO2 high-level memory + process summary
+                    cout << "\n------ process-smi ------\n";
+
+                    // memory summary
+                    cout << "Memory: "
+                        << g_memoryStats.usedMemory << "/" << g_memoryStats.totalMemory
+                        << " bytes used, "
+                        << g_memoryStats.freeMemory << " bytes free\n";
+
+                    scheduler.printStatus();
+                    scheduler.printUtilization();
+
+                    cout << "------------------------------\n";
+                    cout << "\nCommand> " << flush;
+                }
+                // MO2
+                else if (command == "vmstat") {
+                    cout << "\n=== vmstat ===\n";
+
+                    // person 1 u should update this
+                    cout << "Total memory: " << g_memoryStats.totalMemory << " bytes\n";
+                    cout << "Used memory : " << g_memoryStats.usedMemory << " bytes\n";
+                    cout << "Free memory : " << g_memoryStats.freeMemory << " bytes\n";
+                    cout << "Paged in    : " << g_memoryStats.numPagedIn << "\n";
+                    cout << "Paged out   : " << g_memoryStats.numPagedOut << "\n\n";
+
+                    // CPU ticks from scheduler
+                    auto snap = scheduler.getTickSnapshot();
+                    g_vmCpuStats.totalCpuTicks = snap.totalTicks;
+                    g_vmCpuStats.activeCpuTicks = snap.activeTicks;
+                    g_vmCpuStats.idleCpuTicks =
+                        g_vmCpuStats.totalCpuTicks - g_vmCpuStats.activeCpuTicks;
+
+                    cout << "Idle cpu ticks  : " << g_vmCpuStats.idleCpuTicks << "\n";
+                    cout << "Active cpu ticks: " << g_vmCpuStats.activeCpuTicks << "\n";
+                    cout << "Total cpu ticks : " << g_vmCpuStats.totalCpuTicks << "\n";
+
+                    cout << "------------------------------\n";
+                    cout << "\nCommand> " << flush;
                 }
                 else {
                     cout << "[Error] No process attached.\n";
