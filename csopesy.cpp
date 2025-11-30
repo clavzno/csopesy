@@ -1,5 +1,5 @@
-// change to true if doing #4 in the submission
-bool doingnumfour = true;
+// change to true if doing #4 in the MO1 submission
+bool doingnumfour = false;
 /* default config.txt
 num-cpu 4
 scheduler "rr"
@@ -1099,7 +1099,7 @@ void printNames() {
         << "Brillantes, Althea\n"
         << "Clavano, Angelica (Jack)\n"
         << "Narito, Ivan\n"
-        << "Version Date: November 5, 2025\n"
+        << "Version Date: November 30, 2025\n"
         << "----------------------------------------\n";
 }
 
