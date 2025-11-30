@@ -1,5 +1,5 @@
 // change to true if doing #4 in the submission
-bool doingnumfour = false;
+bool doingnumfour = true;
 /* default config.txt
 num-cpu 4
 scheduler "rr"
@@ -143,8 +143,8 @@ struct Process {
                 }
             }
 
+            // output should be shown via process-smi
             log.push_back(msg);
-            // cout << "[" << name << "] " << msg << endl; // uncomment if you want hello world to print during scheduler-stop
         }
         else if (cmd == "FOR") {
             // FOR <repeatCount> <instruction something something>
@@ -873,9 +873,11 @@ void commandInterpreter() {
 
                     cout << "[New Screen] Created process: " << name
                         << " (" << instr << " instructions)\n";
-                    currentProcess = p;
-                    inProcessContext = true;
-                    cout << "\n[" << name << " @process]> ";
+                    // commented out because it should return back to main menu
+                    // currentProcess = p;
+                    // inProcessContext = true;
+                    // cout << "\n[" << name << " @process]> ";
+                    cout << "\nCommand> " << flush;
                 }
             }
 
