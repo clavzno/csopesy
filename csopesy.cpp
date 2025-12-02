@@ -1165,9 +1165,9 @@ void schedulerHandler() {
 
                 scheduler.addProcess(p);
 
-                cout << "[Scheduler] Auto-created process " << p->getName()
-                    << " with " << instrCount << " instructions, " 
-                    << memSize << " bytes memory.\n";
+                // cout << "[Scheduler] Auto-created process " << p->getName()
+                    // << " with " << instrCount << " instructions, " 
+                    // << memSize << " bytes memory.\n";
             }
             
             this_thread::sleep_for(chrono::milliseconds(delayPerExec));
@@ -1389,8 +1389,8 @@ void commandInterpreter() {
                         }
 
                         scheduler.addProcess(p);
-                        cout << "[Scheduler] Created process " << p->getName() 
-                             << " with " << memSize << " bytes memory\n";
+                        //cout << "[Scheduler] Created process " << p->getName() 
+                             // << " with " << memSize << " bytes memory\n";
                     }
                 }
                 else cout << "Scheduler already running.\n";
