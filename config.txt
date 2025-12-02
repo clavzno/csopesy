@@ -5,3 +5,9 @@ batch-process-freq 1
 min-ins 1000
 max-ins 2000
 delay-per-exec 0
+
+# ----- MO2 Memory Manager Parameters -----
+max-overall-mem 65536
+mem-per-frame 4096
+min-mem-per-proc 64
+max-mem-per-proc 4096
