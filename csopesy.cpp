@@ -1533,29 +1533,53 @@ void commandInterpreter() {
                 }
             }
             else if (command == "vmstat") {
-                cout << "\n=== Virtual Memory Statistics ===\n";
-                cout << "Total memory: " << g_memoryStats.totalMemory << " bytes\n";
-                cout << "Used memory : " << g_memoryStats.usedMemory << " bytes\n";
-                cout << "Free memory : " << g_memoryStats.freeMemory << " bytes\n";
-                cout << "Page faults : " << g_memoryStats.pageFaults << "\n";
-                cout << "Paged in    : " << g_memoryStats.numPagedIn << "\n";
-                cout << "Paged out   : " << g_memoryStats.numPagedOut << "\n\n";
+                if (currentProcess) {
+                    cout << "\n=== vmstat (Process Context) ===\n";
+                    cout << "Process: " << currentProcess->getName() << " (PID: " << currentProcess->getPid() << ")\n";
+                    cout << "Process Memory: " << currentProcess->getMemory().memSizeBytes << " bytes\n";
+                    
+                    // Count valid pages for this process
+                    int validPages = 0;
+                    int dirtyPages = 0;
+                    int referencedPages = 0;
+                    for (const auto& entry : currentProcess->getMemory().pageTable) {
+                        if (entry.valid) {
+                            validPages++;
+                            if (entry.dirty) dirtyPages++;
+                            if (entry.referenced) referencedPages++;
+                        }
+                    }
+                    
+                    cout << "Pages in memory: " << validPages << "/" << currentProcess->getMemory().numPages << "\n";
+                    cout << "Dirty pages: " << dirtyPages << "\n";
+                    cout << "Referenced pages: " << referencedPages << "\n";
+                    
+                    // Show system-wide stats
+                    cout << "\n--- System Memory Statistics ---\n";
+                    cout << "Total memory: " << g_memoryStats.totalMemory << " bytes\n";
+                    cout << "Used memory : " << g_memoryStats.usedMemory << " bytes\n";
+                    cout << "Free memory : " << g_memoryStats.freeMemory << " bytes\n";
+                    cout << "Paged in    : " << g_memoryStats.numPagedIn << "\n";
+                    cout << "Paged out   : " << g_memoryStats.numPagedOut << "\n";
+                    cout << "Page faults : " << g_memoryStats.pageFaults << "\n\n";
 
-                auto snap = scheduler.getTickSnapshot();
-                g_vmCpuStats.totalCpuTicks = snap.totalTicks;
-                g_vmCpuStats.activeCpuTicks = snap.activeTicks;
-                g_vmCpuStats.idleCpuTicks =
-                    g_vmCpuStats.totalCpuTicks - g_vmCpuStats.activeCpuTicks;
+                    auto snap = scheduler.getTickSnapshot();
+                    g_vmCpuStats.totalCpuTicks = snap.totalTicks;
+                    g_vmCpuStats.activeCpuTicks = snap.activeTicks;
+                    g_vmCpuStats.idleCpuTicks =
+                        g_vmCpuStats.totalCpuTicks - g_vmCpuStats.activeCpuTicks;
 
-                cout << "Idle cpu ticks  : " << g_vmCpuStats.idleCpuTicks << "\n";
-                cout << "Active cpu ticks: " << g_vmCpuStats.activeCpuTicks << "\n";
-                cout << "Total cpu ticks : " << g_vmCpuStats.totalCpuTicks << "\n";
+                    cout << "Idle cpu ticks  : " << g_vmCpuStats.idleCpuTicks << "\n";
+                    cout << "Active cpu ticks: " << g_vmCpuStats.activeCpuTicks << "\n";
+                    cout << "Total cpu ticks : " << g_vmCpuStats.totalCpuTicks << "\n";
 
-                cout << "------------------------------\n";
-                if (currentProcess)
+                    cout << "------------------------------\n";
                     cout << "\n[" << currentProcess->getName() << " @process]> ";
-                else
-                    cout << "\nCommand> ";
+                }
+                else {
+                    cout << "[Error] No process attached.\n";
+                    cout << "\nCommand> " << flush;
+                }
             }
             else {
                 cout << "[Error] Unknown command in process context.\n";
