@@ -487,10 +487,10 @@ public:
         lock_guard<mutex> lock(schedMutex);
 
         // Allocate memory for the process
-        if (!allocateMemoryForProcess(p.get())) {
-            cout << "[Error] Failed to allocate memory for process " << p->getName() << endl;
-            return;
-        }
+        //if (!allocateMemoryForProcess(p.get())) {
+          //  cout << "[Error] Failed to allocate memory for process " << p->getName() << endl;
+          //  return;
+        //}
 
         readyQueue.push(p);
     }
