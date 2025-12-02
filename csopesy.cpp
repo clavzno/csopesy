@@ -520,15 +520,15 @@ public:
                 else if (p) {
                     try {
                         p->executeNextInstruction();
-                        if (p->isMemoryFaulted()) {
-                            cout << "[Memory Fault] Process " << p->getName()
-                                << " accessed invalid address: " << p->getFaultAddress()
-                                << " at " << p->getFaultTime() << endl;
-                            p->setState(FINISHED);
-                        }
+                        // if (p->isMemoryFaulted()) {
+                           // cout << "[Memory Fault] Process " << p->getName()
+                             //   << " accessed invalid address: " << p->getFaultAddress()
+                               // << " at " << p->getFaultTime() << endl;
+                            // p->setState(FINISHED);
+                        // }
                     }
                     catch (...) {
-                        std::cerr << "[Unknown error] in process " << p->getName() << std::endl;
+                        // std::cerr << "[Unknown error] in process " << p->getName() << std::endl;
                         p->setState(FINISHED);
                     }
 

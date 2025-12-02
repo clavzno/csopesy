@@ -1,12 +1,11 @@
-num-cpu 4
+num-cpu 8
 scheduler "rr"
-quantum-cycles 5
+quantum-cycles 1
 batch-process-freq 1
 min-ins 1000
-max-ins 2000
+max-ins 1000
 delay-per-exec 0
-
-max-overall-mem 65536        # 64KB total memory
-mem-per-frame 4096           # 4KB page size
-min-mem-per-proc 4096        # 4KB min per process
-max-mem-per-proc 32768       # 32KB max per process
+max-overall-mem 1024
+mem-per-frame 256
+min-mem-per-proc 1024
+max-mem-per-proc 1024
