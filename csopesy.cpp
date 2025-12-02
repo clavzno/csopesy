@@ -801,9 +801,9 @@ void initializeMemorySystem() {
         cerr << "[Error] Failed to open backing store file." << endl;
     }
 
-    cout << "[Memory] Initialized " << totalFrames << " frames of "
-        << config_memPerFrame << " bytes each. Total: "
-        << config_maxOverallMem << " bytes." << endl;
+    // cout << "[Memory] Initialized " << totalFrames << " frames of "
+       // << config_memPerFrame << " bytes each. Total: "
+        // << config_maxOverallMem << " bytes." << endl;
 }
 
 void writePageToBackingStore(int frameIndex, long offset) {
@@ -857,8 +857,8 @@ bool allocateMemoryForProcess(Process* p) {
         nextBackingStoreOffset += config_memPerFrame;
     }
 
-    cout << "[Memory] Allocated " << p->getMemory().memSizeBytes << " bytes ("
-        << p->getMemory().numPages << " pages) for process " << p->getName() << endl;
+    //cout << "[Memory] Allocated " << p->getMemory().memSizeBytes << " bytes ("
+        // << p->getMemory().numPages << " pages) for process " << p->getName() << endl;
 
     return true;
 }
@@ -883,7 +883,7 @@ void releaseProcessMemory(Process* p) {
         }
     }
 
-    cout << "[Memory] Released memory for process " << p->getName() << endl;
+    // cout << "[Memory] Released memory for process " << p->getName() << endl;
 }
 
 int handlePageFault(Process* p, int page) {
@@ -955,14 +955,11 @@ int handlePageFault(Process* p, int page) {
     g_memoryStats.usedMemory += config_memPerFrame;
     g_memoryStats.freeMemory -= config_memPerFrame;
 
-    cout << "[Page Fault] Process " << p->getName() << " page " << page
-        << " loaded into frame " << freeFrame << endl;
+    // cout << "[Page Fault] Process " << p->getName() << " page " << page
+       // << " loaded into frame " << freeFrame << endl;
 
     return freeFrame;
 }
-
-// Rest of the code remains the same (loadASCIIfont, textToAscii, keyboardHandler, etc.)
-// ... [Keep all the other functions as they were in your original code, just make sure to update Process method calls]
 
 int config_numCPU = 2;
 SchedulerType config_schedType = FCFS;
@@ -1211,9 +1208,9 @@ void schedulerHandler() {
 
                 scheduler.addProcess(p);
 
-                cout << "[Scheduler] Auto-created process " << p->getName()
-                    << " with " << instrCount << " instructions, "
-                    << memSize << " bytes memory.\n";
+                // cout << "[Scheduler] Auto-created process " << p->getName()
+                   // << " with " << instrCount << " instructions, "
+                   // << memSize << " bytes memory.\n";
             }
 
             this_thread::sleep_for(chrono::milliseconds(delayPerExec));
@@ -1507,8 +1504,8 @@ void commandInterpreter() {
                         }
 
                         scheduler.addProcess(p);
-                        cout << "[Scheduler] Created process " << p->getName()
-                            << " with " << memSize << " bytes memory\n";
+                        // cout << "[Scheduler] Created process " << p->getName()
+                           // << " with " << memSize << " bytes memory\n";
                     }
                 }
                 else cout << "Scheduler already running.\n";
@@ -1577,6 +1574,33 @@ void commandInterpreter() {
                         break;
                     }
                 }
+                cout << "\nCommand> " << flush;
+            }
+            else if (command == "vmstat") {
+                // snapshot of cpu ticks from scheduler
+                auto snap = scheduler.getTickSnapshot();
+                g_vmCpuStats.totalCpuTicks = snap.totalTicks;
+                g_vmCpuStats.activeCpuTicks = snap.activeTicks;
+                g_vmCpuStats.idleCpuTicks = g_vmCpuStats.totalCpuTicks - g_vmCpuStats.activeCpuTicks;
+                if (g_vmCpuStats.idleCpuTicks < 0) {
+                    g_vmCpuStats.idleCpuTicks = 0;
+                }
+                cout << "\n=== vmstat ===\n";
+
+                // system-wide memory statistics here
+                cout << "Total memory : " << g_memoryStats.totalMemory << " bytes\n";
+                cout << "Used memory  : " << g_memoryStats.usedMemory << " bytes\n";
+                cout << "Free memory  : " << g_memoryStats.freeMemory << " bytes\n";
+                cout << "Paged in     : " << g_memoryStats.numPagedIn << "\n";
+                cout << "Paged out    : " << g_memoryStats.numPagedOut << "\n";
+                cout << "Page faults  : " << g_memoryStats.pageFaults << "\n\n";
+
+                // CPU tick stats here
+                cout << "Idle cpu ticks   : " << g_vmCpuStats.idleCpuTicks << "\n";
+                cout << "Active cpu ticks : " << g_vmCpuStats.activeCpuTicks << "\n";
+                cout << "Total cpu ticks  : " << g_vmCpuStats.totalCpuTicks << "\n";
+
+                cout << "------------------------------\n";
                 cout << "\nCommand> " << flush;
             }
 
@@ -1650,55 +1674,6 @@ void commandInterpreter() {
                         cout << "\n[" << currentProcess->getName() << " @process]> ";
                     else
                         cout << "\nCommand> ";
-                }
-            }
-            else if (command == "vmstat") {
-                if (currentProcess) {
-                    cout << "\n=== vmstat (Process Context) ===\n";
-                    cout << "Process: " << currentProcess->getName() << " (PID: " << currentProcess->getPid() << ")\n";
-                    cout << "Process Memory: " << currentProcess->getMemory().memSizeBytes << " bytes\n";
-
-                    // Count valid pages for this process
-                    int validPages = 0;
-                    int dirtyPages = 0;
-                    int referencedPages = 0;
-                    for (const auto& entry : currentProcess->getMemory().pageTable) {
-                        if (entry.valid) {
-                            validPages++;
-                            if (entry.dirty) dirtyPages++;
-                            if (entry.referenced) referencedPages++;
-                        }
-                    }
-
-                    cout << "Pages in memory: " << validPages << "/" << currentProcess->getMemory().numPages << "\n";
-                    cout << "Dirty pages: " << dirtyPages << "\n";
-                    cout << "Referenced pages: " << referencedPages << "\n";
-
-                    // Show system-wide stats
-                    cout << "\n--- System Memory Statistics ---\n";
-                    cout << "Total memory: " << g_memoryStats.totalMemory << " bytes\n";
-                    cout << "Used memory : " << g_memoryStats.usedMemory << " bytes\n";
-                    cout << "Free memory : " << g_memoryStats.freeMemory << " bytes\n";
-                    cout << "Paged in    : " << g_memoryStats.numPagedIn << "\n";
-                    cout << "Paged out   : " << g_memoryStats.numPagedOut << "\n";
-                    cout << "Page faults : " << g_memoryStats.pageFaults << "\n\n";
-
-                    auto snap = scheduler.getTickSnapshot();
-                    g_vmCpuStats.totalCpuTicks = snap.totalTicks;
-                    g_vmCpuStats.activeCpuTicks = snap.activeTicks;
-                    g_vmCpuStats.idleCpuTicks =
-                        g_vmCpuStats.totalCpuTicks - g_vmCpuStats.activeCpuTicks;
-
-                    cout << "Idle cpu ticks  : " << g_vmCpuStats.idleCpuTicks << "\n";
-                    cout << "Active cpu ticks: " << g_vmCpuStats.activeCpuTicks << "\n";
-                    cout << "Total cpu ticks : " << g_vmCpuStats.totalCpuTicks << "\n";
-
-                    cout << "------------------------------\n";
-                    cout << "\n[" << currentProcess->getName() << " @process]> ";
-                }
-                else {
-                    cout << "[Error] No process attached.\n";
-                    cout << "\nCommand> " << flush;
                 }
             }
             else {
