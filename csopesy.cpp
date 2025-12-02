@@ -891,7 +891,7 @@ int handlePageFault(Process* p, int page) {
 
     g_memoryStats.pageFaults++;
 
-    // Find a free frame
+    // find a free frame
     int freeFrame = -1;
     for (int i = 0; i < totalFrames; i++) {
         if (frameTable[i] == -1) {
@@ -900,7 +900,7 @@ int handlePageFault(Process* p, int page) {
         }
     }
 
-    // If no free frame, evict one using LRU
+    // if no free frame, evict one using LRU
     if (freeFrame == -1) {
         // Find least recently used frame
         long long oldest = LLONG_MAX;
@@ -911,10 +911,10 @@ int handlePageFault(Process* p, int page) {
             }
         }
 
-        // Evict the victim frame
+        // evict the victim frame
         int victimPID = frameTable[freeFrame];
 
-        // Find the process that owns this frame and write out if dirty
+        // find the process that owns this frame and write out if dirty
         auto allProcesses = scheduler.getProcessList();
         for (auto& victimProc : allProcesses) {
             if (victimProc->getPid() == victimPID) {
@@ -938,10 +938,10 @@ int handlePageFault(Process* p, int page) {
         }
     }
 
-    // Load the page into the frame
+    // load page into the frame
     readPageFromBackingStore(freeFrame, p->getMemory().pageTable[page].backingStoreOffset);
 
-    // Update page table and frame table
+    // update thepage table and frame table
     p->getMemory().pageTable[page].valid = true;
     p->getMemory().pageTable[page].frameIndex = freeFrame;
     p->getMemory().pageTable[page].referenced = true;
@@ -950,7 +950,7 @@ int handlePageFault(Process* p, int page) {
     frameTable[freeFrame] = p->getPid();
     frameLastUsed[freeFrame] = globalTick;
 
-    // Update memory stats
+    // update memory stats
     g_memoryStats.numPagedIn++;
     g_memoryStats.usedMemory += config_memPerFrame;
     g_memoryStats.freeMemory -= config_memPerFrame;
@@ -1124,7 +1124,7 @@ void loadConfig(const string& filename) {
         << " MaxMemProc=" << config_maxMemPerProc
         << endl;
 
-    // Initialize memory system after loading config
+    // initialize memory system after loading config
     initializeMemorySystem();
 }
 
@@ -1139,7 +1139,7 @@ void marqueeHandler() {
                 asciiText = marqueeText;
             }
 
-            // Split asciiText into lines
+            // split asciiText into lines
             vector<string> lines;
             string line;
             stringstream ss(asciiText);
