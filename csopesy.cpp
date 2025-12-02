@@ -1706,7 +1706,7 @@ void printNames() {
         << "Brillantes, Althea\n"
         << "Clavano, Angelica (Jack)\n"
         << "Narito, Ivan\n"
-        << "Version Date: November 30, 2025\n"
+        << "Version Date: December 2, 2025\n"
         << "----------------------------------------\n";
 }
 
