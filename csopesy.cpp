@@ -27,10 +27,23 @@ delay-per-exec 0
 #include <memory>
 #include <cstdlib>
 #include <ctime>
+#include <iomanip>
+#include <climits>
 // for printing the utilization report location
 #include <direct.h>
 
 using namespace std;
+
+// Forward declarations
+class Process;
+class Scheduler;
+
+// Global declarations
+extern Scheduler scheduler;
+extern int config_memPerFrame;
+extern int config_maxOverallMem;
+extern int config_minMemPerProc;
+extern int config_maxMemPerProc;
 
 enum ProcessState { READY, RUNNING, SLEEPING, FINISHED };
 // shared resources/globals
@@ -72,6 +85,7 @@ struct MemoryStats {
     int freeMemory = 0;
     long long numPagedIn = 0;
     long long numPagedOut = 0;
+    long long pageFaults = 0;
 };
 
 struct VmCpuStats {
@@ -83,13 +97,13 @@ struct VmCpuStats {
 MemoryStats g_memoryStats;
 VmCpuStats  g_vmCpuStats;
 
-
-
-// ----- Demand Paging-----
+// ----- Demand Paging Structures -----
 struct PageTableEntry {
     bool valid = false;       
     bool dirty = false;       
+    bool referenced = false;  
     int frameIndex = -1;      
+    long long lastUsed = 0;   // For LRU approximation
     long backingStoreOffset;  // location in csopesy-backing-store.txt
 };
 
@@ -97,15 +111,45 @@ struct ProcessMemory {
     int memSizeBytes;  
     int numPages;
     vector<PageTableEntry> pageTable;
+    int allocatedFrames = 0;
+    
+    ProcessMemory() : memSizeBytes(0), numPages(0) {}
+    ProcessMemory(int size, int frameSize); // Declaration only
 };
 
-vector<int> frameTable;            
-vector<vector<uint8_t>> physFrames;
+// Global memory structures
+vector<int> frameTable;            // maps frame index to process ID (-1 if free)
+vector<vector<uint8_t>> physFrames; // Physical memory frames
+vector<long long> frameLastUsed;    // For LRU eviction
 int totalFrames = 0;
 
-fstream backingStore;               
+fstream backingStore;  
+mutex memoryMutex;
+mutex backingStoreMutex;
 
-struct Process {
+// Memory configuration parameters
+int config_maxOverallMem = 0;
+int config_memPerFrame = 0;
+int config_minMemPerProc = 0;
+int config_maxMemPerProc = 0;
+
+// Function declarations
+void initializeMemorySystem();
+int handlePageFault(Process* p, int page);
+bool allocateMemoryForProcess(Process* p);
+void releaseProcessMemory(Process* p);
+void writePageToBackingStore(int frameIndex, long offset);
+void readPageFromBackingStore(int frameIndex, long offset);
+
+// ProcessMemory constructor definition
+ProcessMemory::ProcessMemory(int size, int frameSize) : memSizeBytes(size) {
+    numPages = (size + frameSize - 1) / frameSize;
+    pageTable.resize(numPages);
+}
+
+// Now define the Process class
+class Process {
+private:
     int pid;
     string name;
     ProcessState state;
@@ -113,39 +157,53 @@ struct Process {
     int executedInstructions;
     int sleepTicks;
 
-    //adding memory to each process
+    // Memory management
     ProcessMemory mem;
-    bool memoryFaulted = false;
+    bool memoryFaulted;
     string faultAddressHex;
     string faultTime;
 
     // instruction engine-related
     vector<string> instructions; // list of instructions to execute
-    int instructionPointer = 0; // current instruction index
+    int instructionPointer; // current instruction index
     map<string, uint16_t> variables; // variable mem
     vector<string> log; // for PRINT
 
+public:
     Process(int id, const string& n, int instrCount) :
         pid(id),
-        name(n), \
+        name(n),
         state(READY),
         totalInstructions(instrCount),
         executedInstructions(0),
-        sleepTicks(0) {
+        sleepTicks(0),
+        memoryFaulted(false),
+        instructionPointer(0) {
+    }
+
+    // Getters
+    int getPid() const { return pid; }
+    string getName() const { return name; }
+    ProcessState getState() const { return state; }
+    int getTotalInstructions() const { return totalInstructions; }
+    int getExecutedInstructions() const { return executedInstructions; }
+    ProcessMemory& getMemory() { return mem; }
+    const ProcessMemory& getMemory() const { return mem; }
+    bool isMemoryFaulted() const { return memoryFaulted; }
+    string getFaultAddress() const { return faultAddressHex; }
+    string getFaultTime() const { return faultTime; }
+    
+    // Setters
+    void setState(ProcessState s) { state = s; }
+    void setSleepTicks(int ticks) { sleepTicks = ticks; }
+    void setInstructions(const vector<string>& instr) { instructions = instr; }
+    void setMemorySize(int size) { 
+        mem = ProcessMemory(size, config_memPerFrame);
     }
 
     // instruction engine-related
     void executeNextInstruction() {
-
-        //for state - uncomment if you want to see them executing in real time
-        /*
-        if (schedulerRunning == true) {
-            cout << "Executing instruction at " << instructionPointer << " / " << instructions.size() << endl;
-        }*/
-
         if (instructionPointer >= instructions.size()) {
-            //for state - uncomment if you want to see info
-            // cout << "Process " << name << "finished at instructionPointer " << instructionPointer << "\n";
             state = FINISHED;
             return;
         }
@@ -190,13 +248,11 @@ struct Process {
             log.push_back(msg);
         }
         else if (cmd == "FOR") {
-            // FOR <repeatCount> <instruction something something>
             int numRepeats;
             ss >> numRepeats;
-            string rest; // rest of the instruction here
+            string rest;
             getline(ss, rest);
 
-            // trim rest
             while (!rest.empty() && isspace(rest.front())) {
                 rest.erase(rest.begin());
             }
@@ -206,138 +262,120 @@ struct Process {
             }
 
             if (!rest.empty() && numRepeats > 0) {
-                // insert the rest of the instruction for numRepeats after current position
                 vector<string> newInstr;
                 for (int i = 0; i < numRepeats; ++i)
                     newInstr.push_back(rest);
 
-                // insert into instruction list right after current position
                 instructions.insert(instructions.begin() + instructionPointer + 1, newInstr.begin(), newInstr.end());
             }
         }
-
-    //added for memory read/write
         else if (cmd == "READ") {
-    string var, addrStr;
-    ss >> var >> addrStr;
-    int addr = stoi(addrStr, nullptr, 16);
-    if(addr < 0 || addr >= mem.memSizeBytes){
-        memoryFaulted = true;
-        faultAddressHex = addrStr;
-        time_t t = time(NULL);
-        faultTime = ctime(&t);
-        state = FINISHED;
-        return;
-    }
+            string var, addrStr;
+            ss >> var >> addrStr;
+            
+            // Convert hex address to decimal
+            int addr;
+            try {
+                addr = stoi(addrStr, nullptr, 16);
+            } catch (...) {
+                memoryFaulted = true;
+                faultAddressHex = addrStr;
+                time_t t = time(NULL);
+                faultTime = ctime(&t);
+                if (!faultTime.empty() && faultTime.back() == '\n')
+                    faultTime.pop_back();
+                state = FINISHED;
+                return;
+            }
+            
+            // Check bounds
+            if (addr < 0 || addr >= mem.memSizeBytes) {
+                memoryFaulted = true;
+                faultAddressHex = addrStr;
+                time_t t = time(NULL);
+                faultTime = ctime(&t);
+                if (!faultTime.empty() && faultTime.back() == '\n')
+                    faultTime.pop_back();
+                state = FINISHED;
+                return;
+            }
 
-    int page = addr / config_memPerFrame;
-    int offset = addr % config_memPerFrame;
+            int page = addr / config_memPerFrame;
+            int offset = addr % config_memPerFrame;
 
-    if(!mem.pageTable[page].valid)
-        handlePageFault(this, page);
+            if (!mem.pageTable[page].valid) {
+                handlePageFault(this, page);
+            }
 
-    int frame = mem.pageTable[page].frameIndex;
-    uint16_t val;
-    memcpy(&val, &physFrames[frame][offset], sizeof(uint16_t));
-    variables[var] = val;
-}
-    else if (cmd == "WRITE") {
-        string addrStr; int val;
-        ss >> addrStr >> val;
-        int addr = stoi(addrStr, nullptr, 16);
-
-        if(addr < 0 || addr >= mem.memSizeBytes){
-            memoryFaulted = true;
-            faultAddressHex = addrStr;
-            time_t t = time(NULL);
-            faultTime = ctime(&t);
-            state = FINISHED;
-            return;
+            // Mark as referenced
+            mem.pageTable[page].referenced = true;
+            mem.pageTable[page].lastUsed = globalTick;
+            
+            int frame = mem.pageTable[page].frameIndex;
+            frameLastUsed[frame] = globalTick;
+            
+            // Read from physical memory
+            uint16_t val;
+            lock_guard<mutex> lock(memoryMutex);
+            memcpy(&val, &physFrames[frame][offset], sizeof(uint16_t));
+            variables[var] = val;
         }
+        else if (cmd == "WRITE") {
+            string addrStr; int val;
+            ss >> addrStr >> val;
+            
+            // Convert hex address to decimal
+            int addr;
+            try {
+                addr = stoi(addrStr, nullptr, 16);
+            } catch (...) {
+                memoryFaulted = true;
+                faultAddressHex = addrStr;
+                time_t t = time(NULL);
+                faultTime = ctime(&t);
+                if (!faultTime.empty() && faultTime.back() == '\n')
+                    faultTime.pop_back();
+                state = FINISHED;
+                return;
+            }
+            
+            // Check bounds
+            if (addr < 0 || addr >= mem.memSizeBytes) {
+                memoryFaulted = true;
+                faultAddressHex = addrStr;
+                time_t t = time(NULL);
+                faultTime = ctime(&t);
+                if (!faultTime.empty() && faultTime.back() == '\n')
+                    faultTime.pop_back();
+                state = FINISHED;
+                return;
+            }
 
-        int page = addr / config_memPerFrame;
-        int offset = addr % config_memPerFrame;
+            int page = addr / config_memPerFrame;
+            int offset = addr % config_memPerFrame;
 
-        if(!mem.pageTable[page].valid)
-            handlePageFault(this, page);
+            if (!mem.pageTable[page].valid) {
+                handlePageFault(this, page);
+            }
 
-        int frame = mem.pageTable[page].frameIndex;
-        uint16_t v16 = (uint16_t)val;
-        memcpy(&physFrames[frame][offset], &v16, sizeof(uint16_t));
-        mem.pageTable[page].dirty = true;
-    }
+            // Mark as referenced and dirty
+            mem.pageTable[page].referenced = true;
+            mem.pageTable[page].dirty = true;
+            mem.pageTable[page].lastUsed = globalTick;
+            
+            int frame = mem.pageTable[page].frameIndex;
+            frameLastUsed[frame] = globalTick;
+            
+            // Write to physical memory
+            uint16_t v16 = (uint16_t)val;
+            lock_guard<mutex> lock(memoryMutex);
+            memcpy(&physFrames[frame][offset], &v16, sizeof(uint16_t));
+        }
 
         instructionPointer++;
         executedInstructions++;
-
-        /* uncomment if you want to see the executed instructions */
-        //if (schedulerRunning == true) {
-        //    cout << "Executed Instructions: " << executedInstructions << endl;
-        //}
-
-
     }
 };
-
-// page fault handler
-int handlePageFault(Process* p, int page) {
-    // find free frame
-    for(int i=0;i<totalFrames;i++){
-        if(frameTable[i] == -1){
-            frameTable[i] = p->pid;
-            p->mem.pageTable[page].valid = true;
-            p->mem.pageTable[page].frameIndex = i;
-
-            // load from backing store
-            backingStore.seekg(p->mem.pageTable[page].backingStoreOffset);
-            backingStore.read((char*)physFrames[i].data(), config_memPerFrame);
-            g_memoryStats.numPagedIn++;
-            g_memoryStats.freeMemory -= config_memPerFrame;
-            return i;
-        }
-    }
-
-    // no free frame → evict victim (FIFO)
-    int victimFrame = rand() % totalFrames;
-    int victimPID = frameTable[victimFrame];
-
-    // write victim frame back to backing store
-    auto tempQueue = scheduler.getReadyQueue();
-    while(!tempQueue.empty()) {
-        auto pr = tempQueue.front();
-        tempQueue.pop();
-
-        if (pr->pid == victimPID) {
-            for (auto& entry : pr->mem.pageTable) {
-                if (entry.valid && entry.frameIndex == victimFrame) {
-
-                    entry.valid = false;
-
-                    backingStore.seekp(entry.backingStoreOffset);
-                    backingStore.write(
-                        (char*)physFrames[victimFrame].data(),
-                        config_memPerFrame
-                    );
-
-                    entry.dirty = false;
-                    g_memoryStats.numPagedOut++;
-                }
-            }
-        }
-    }
-
-
-    // load new page
-    frameTable[victimFrame] = p->pid;
-    backingStore.seekg(p->mem.pageTable[page].backingStoreOffset);
-    backingStore.read((char*)physFrames[victimFrame].data(), config_memPerFrame);
-
-    p->mem.pageTable[page].valid = true;
-    p->mem.pageTable[page].frameIndex = victimFrame;
-    g_memoryStats.numPagedIn++;
-
-    return victimFrame;
-}
 
 struct CPUCore {
     int id;
@@ -388,6 +426,13 @@ public:
 
     void addProcess(shared_ptr<Process> p) {
         lock_guard<mutex> lock(schedMutex);
+        
+        // Allocate memory for the process
+        if (!allocateMemoryForProcess(p.get())) {
+            cout << "[Error] Failed to allocate memory for process " << p->getName() << endl;
+            return;
+        }
+        
         readyQueue.push(p);
     }
 
@@ -395,64 +440,51 @@ public:
         lock_guard<mutex> lock(schedMutex);
         tickCounter++;
 
-
         for (auto& core : cores) {
             core.totalTicks++;
             if (core.isIdle() && !readyQueue.empty()) {
                 core.currentProcess = readyQueue.front();
                 readyQueue.pop();
-                core.currentProcess->state = RUNNING;
+                core.currentProcess->setState(RUNNING);
                 core.quantumRemaining = quantumCycles;
             }
         }
 
         for (auto& core : cores) {
             if (!core.isIdle()) {
-                if (core.isIdle()) continue; // avoid accessing a null ptr (stops the entire scheduler)
-
                 core.activeTicks++;
                 auto& p = core.currentProcess;
 
-                if (p->sleepTicks > 0) {
-                    p->sleepTicks--;
+                if (p->getState() == SLEEPING) {
+                    // Handle sleep ticks if needed
                 }
-
-                if (!p) continue; // just in case 
-
-                else {
+                else if (p) {
                     try {
-                        // this may cause it to abort if the instruction was malformed 
-                        // one instruction per tick
-                        p->executeNextInstruction(); // was p->executedInstructions
-                        if(p->memoryFaulted){
-                            p->state = FINISHED;
-                            finishedList.push_back(p);
-                            core.currentProcess = nullptr;
-                            continue;
+                        p->executeNextInstruction();
+                        if(p->isMemoryFaulted()){
+                            cout << "[Memory Fault] Process " << p->getName() 
+                                 << " accessed invalid address: " << p->getFaultAddress() 
+                                 << " at " << p->getFaultTime() << endl;
+                            p->setState(FINISHED);
                         }
                     }
                     catch (...) {
-                        // if the next instruction was malformed for some reason it will notify the user and mark it as finished
-                        std::cerr << "[Unknown error] in process " << p->name << std::endl;
-                        p->state = FINISHED;
+                        std::cerr << "[Unknown error] in process " << p->getName() << std::endl;
+                        p->setState(FINISHED);
+                    }
+
+                    if (p->getState() == FINISHED) {
+                        // Release memory when process finishes
+                        releaseProcessMemory(p.get());
                         finishedList.push_back(p);
                         core.currentProcess = nullptr;
                         continue;
                     }
 
-                    // changed, instruction engine-related
-                    // check if process finished after execution
-                    if (p->state == FINISHED) {
-                        finishedList.push_back(p);
-                        core.currentProcess = nullptr;
-                        continue;
-                    }
-
-                    // had to redo the rr handling
                     if (type == RR) {
                         core.quantumRemaining--;
                         if (core.quantumRemaining <= 0) {
-                            p->state = READY;
+                            p->setState(READY);
                             readyQueue.push(p);
                             core.currentProcess = nullptr;
                         }
@@ -462,7 +494,6 @@ public:
         }
     }
 
-    // MO2
     struct SchedulerTickSnapshot {
         long long activeTicks = 0;
         long long totalTicks = 0;
@@ -478,19 +509,17 @@ public:
         return snap;
     }
 
-
-    // instructions generator - process instructions are pre-determined and not typed by the user. ex. randomized via scheduler-start command.
     vector<string> generateRandomInstructions(int count) {
         vector<string> instr;
-
-        //declare before using 
         instr.push_back("DECLARE x 5");
 
         vector<string> possible = {
             "ADD x x 1",
             "SUBTRACT x x 1",
             "PRINT Hello world",
-            "SLEEP 2"
+            "SLEEP 2",
+            "READ y 0x100",
+            "WRITE 0x200 42"
         };
 
         for (int i = 1; i < count; ++i)
@@ -498,32 +527,22 @@ public:
         return instr;
     }
 
-    // for number 4 in demo: PRINT ADD PRINT ADD
-    // update should be in schedulerhandler p->instructions = scheduler.generateRandomInstructions(instrCount);
     vector<string> generateTestInstructions(int count) {
         vector<string> instr;
-
         instr.push_back("DECLARE x 0");
 
-        // alternate bet print and add
         for (int i = 1; i < count; ++i) {
             if (i % 2 == 1) {
-                // odd = print
                 instr.push_back("PRINT value from: x");
             }
             else {
-                // even = add
                 int addVal = rand() % 10 + 1;
                 instr.push_back("ADD x x " + to_string(addVal));
             }
         }
-
         return instr;
     }
 
-    // ------------------------------ STATUS PRINTING ------------------------------
-
-    // get actual core usage of actual running process right now, not cumulative
     double getCurrentCPUUtilization() {
         int coresUsed = 0;
         for (auto& core : cores) {
@@ -531,11 +550,10 @@ public:
         }
 
         if (cores.empty()) return 0.0;
-        if (!schedulerRunning) return 0.0; // scheduler-stop = paused = should be 0% usage
+        if (!schedulerRunning) return 0.0;
         return (static_cast<double>(coresUsed) / cores.size()) * 100.0;
     }
 
-    // cpu utilization
     void printUtilization() {
         lock_guard<mutex> lock(schedMutex);
         cout << "\nCPU Utilization Report\n";
@@ -554,30 +572,28 @@ public:
         cout << "Current CPU Utilization: " << utilization << "%\n";
     }
 
-    // scheduler, core status
     void printStatus() {
         lock_guard<mutex> lock(schedMutex);
         cout << "\nScheduler Status \n";
         cout << "Ready Queue: " << readyQueue.size() << " process(es)\n";
         cout << "Finished: " << finishedList.size() << "\n";
+        cout << "Memory Used: " << g_memoryStats.usedMemory << "/" << g_memoryStats.totalMemory 
+             << " bytes (" << g_memoryStats.pageFaults << " page faults)\n";
 
-        // core utilization
         for (auto& core : cores) {
             cout << "Core " << core.id << ": ";
             if (core.isIdle()) cout << "Idle\n";
-            else cout << "Running " << core.currentProcess->name
-                << " (" << core.currentProcess->executedInstructions
-                << "/" << core.currentProcess->totalInstructions << ")\n";
+            else cout << "Running " << core.currentProcess->getName()
+                << " (" << core.currentProcess->getExecutedInstructions()
+                << "/" << core.currentProcess->getTotalInstructions() << ")\n";
         }
         cout << "------------------------------\n";
     }
 
-    // log cpu and process utilization report - report-util
     string saveUtilizationFile(const string& filename) {
         lock_guard<mutex> lock(schedMutex);
         ofstream logfile(filename, ios::app);
 
-        // failure would return the location still
         if (!logfile.is_open()) {
             char absBuf[_MAX_PATH];
             if (_fullpath(absBuf, filename.c_str(), _MAX_PATH)) {
@@ -589,41 +605,37 @@ public:
             return attempted;
         }
 
-        // calculate the core stats (active cores)
         int coresUsed = 0;
         for (auto& core : cores) {
             if (!core.isIdle()) coresUsed++;
         }
 
         size_t coresAvailable = cores.size() - static_cast<size_t>(coresUsed);
-
         double cpuUtil = (cores.empty()) ? 0.0
             : (static_cast<double>(coresUsed) / cores.size()) * 100.0;
         
         if (!schedulerRunning)
             cpuUtil = 0.0;
 
-        // get current system time for timestamps
         auto now = chrono::system_clock::now();
         time_t time_now = chrono::system_clock::to_time_t(now);
 
-        // for the header time 
         tm timeinfo{};
         localtime_s(&timeinfo, &time_now);
         char headerTime[30];
         strftime(headerTime, sizeof(headerTime), "%m/%d/%Y %I:%M:%S%p", &timeinfo);
 
-        // following the sample image in specs
         logfile << "\n\n\n";
         logfile << "------------------------------" << headerTime << "------------------------------" << "\n";
         logfile << "CPU Utilization: " << cpuUtil << "%\n";
         logfile << "Cores used: " << coresUsed << "\n";
-        logfile << "Cores available: " << coresAvailable << "\n\n";
+        logfile << "Cores available: " << coresAvailable << "\n";
+        logfile << "Memory: " << g_memoryStats.usedMemory << "/" << g_memoryStats.totalMemory 
+                << " bytes, Page Faults: " << g_memoryStats.pageFaults << "\n\n";
         logfile << "Core Utilization: \n";
         logfile << "------------------------------\n";
         logfile << "Running processes:\n";
 
-        // get the running proceses info
         for (auto& core : cores) {
             if (!core.isIdle()) {
                 auto p = core.currentProcess;
@@ -632,11 +644,10 @@ public:
                 char timeStr[30];
                 strftime(timeStr, sizeof(timeStr), "%m/%d/%Y %I:%M:%S%p", &timeinfo);
 
-                // print to the file
-                logfile << p->name << " (" << timeStr << ")"
+                logfile << p->getName() << " (" << timeStr << ")"
                     << "\tCore: " << core.id << "\t"
-                    << p->executedInstructions << "/" << p->totalInstructions
-                    << "\n";
+                    << p->getExecutedInstructions() << "/" << p->getTotalInstructions()
+                    << "\tMem: " << p->getMemory().memSizeBytes << " bytes\n";
             }
         }
 
@@ -646,16 +657,15 @@ public:
             localtime_s(&timeinfo, &time_now);
             char timeStr[30];
             strftime(timeStr, sizeof(timeStr), "%m/%d/%Y %I:%M:%S%p", &timeinfo);
-            logfile << p->name << " (" << timeStr << ")"
+            logfile << p->getName() << " (" << timeStr << ")"
                 << "\tFinished\t"
-                << p->executedInstructions << "/" << p->totalInstructions
+                << p->getExecutedInstructions() << "/" << p->getTotalInstructions()
                 << "\n";
         }
 
         logfile << "------------------------------\n";
         logfile.close();
 
-        // return the absolute path
         const string logName = "csopesy-log.txt";
         char absBuf[_MAX_PATH];
         string absPath;
@@ -676,24 +686,241 @@ public:
         cout << "Ready Queue Contents:\n";
         while (!temp.empty()) {
             auto p = temp.front(); temp.pop();
-            cout << " " << p->name << " (" << p->executedInstructions << "/"
-                << p->totalInstructions << ")\n";
+            cout << " " << p->getName() << " (" << p->getExecutedInstructions() << "/"
+                << p->getTotalInstructions() << ") Mem: " << p->getMemory().memSizeBytes << " bytes\n";
         }
     }
 
     queue<shared_ptr<Process>> getReadyQueue() {
         lock_guard<mutex> lock(schedMutex);
-        return readyQueue; // returns a copy
+        return readyQueue;
     }
-
+    
+    vector<shared_ptr<Process>> getProcessList() {
+        lock_guard<mutex> lock(schedMutex);
+        vector<shared_ptr<Process>> allProcesses;
+        
+        // Get processes from ready queue
+        queue<shared_ptr<Process>> temp = readyQueue;
+        while (!temp.empty()) {
+            allProcesses.push_back(temp.front());
+            temp.pop();
+        }
+        
+        // Get running processes
+        for (auto& core : cores) {
+            if (!core.isIdle()) {
+                allProcesses.push_back(core.currentProcess);
+            }
+        }
+        
+        // Get finished processes
+        for (auto& p : finishedList) {
+            allProcesses.push_back(p);
+        }
+        
+        return allProcesses;
+    }
 };
 
+// Global scheduler instance
 Scheduler scheduler;
+
+// Memory Management Functions Implementation
+
+void initializeMemorySystem() {
+    lock_guard<mutex> lock(memoryMutex);
+    
+    // Calculate total frames
+    totalFrames = config_maxOverallMem / config_memPerFrame;
+    
+    // Initialize physical frames
+    physFrames.resize(totalFrames);
+    for (int i = 0; i < totalFrames; i++) {
+        physFrames[i].resize(config_memPerFrame, 0);
+    }
+    
+    // Initialize frame table (all free initially)
+    frameTable.assign(totalFrames, -1);
+    frameLastUsed.assign(totalFrames, 0);
+    
+    // Initialize memory stats
+    g_memoryStats.totalMemory = config_maxOverallMem;
+    g_memoryStats.freeMemory = config_maxOverallMem;
+    g_memoryStats.usedMemory = 0;
+    
+    // Open backing store
+    backingStore.open("csopesy-backing-store.txt", ios::in | ios::out | ios::binary | ios::trunc);
+    if (!backingStore.is_open()) {
+        cerr << "[Error] Failed to open backing store file." << endl;
+    }
+    
+    cout << "[Memory] Initialized " << totalFrames << " frames of " 
+         << config_memPerFrame << " bytes each. Total: " 
+         << config_maxOverallMem << " bytes." << endl;
+}
+
+void writePageToBackingStore(int frameIndex, long offset) {
+    lock_guard<mutex> lock(backingStoreMutex);
+    
+    if (!backingStore.is_open()) {
+        cerr << "[Error] Backing store not open for writing." << endl;
+        return;
+    }
+    
+    backingStore.seekp(offset);
+    backingStore.write(reinterpret_cast<char*>(physFrames[frameIndex].data()), config_memPerFrame);
+    backingStore.flush();
+}
+
+void readPageFromBackingStore(int frameIndex, long offset) {
+    lock_guard<mutex> lock(backingStoreMutex);
+    
+    if (!backingStore.is_open()) {
+        cerr << "[Error] Backing store not open for reading." << endl;
+        return;
+    }
+    
+    backingStore.seekg(offset);
+    backingStore.read(reinterpret_cast<char*>(physFrames[frameIndex].data()), config_memPerFrame);
+}
+
+bool allocateMemoryForProcess(Process* p) {
+    lock_guard<mutex> lock(memoryMutex);
+    
+    // Calculate required frames (rounded up)
+    int requiredFrames = (p->getMemory().memSizeBytes + config_memPerFrame - 1) / config_memPerFrame;
+    
+    if (requiredFrames > totalFrames) {
+        cout << "[Error] Process requires " << requiredFrames 
+             << " frames but only " << totalFrames << " available total." << endl;
+        return false;
+    }
+    
+    if (p->getMemory().memSizeBytes < config_minMemPerProc || p->getMemory().memSizeBytes > config_maxMemPerProc) {
+        cout << "[Error] Process memory size " << p->getMemory().memSizeBytes 
+             << " bytes is outside allowed range [" << config_minMemPerProc 
+             << ", " << config_maxMemPerProc << "]." << endl;
+        return false;
+    }
+    
+    // Assign backing store offsets to each page
+    static long nextBackingStoreOffset = 0;
+    for (int i = 0; i < p->getMemory().numPages; i++) {
+        p->getMemory().pageTable[i].backingStoreOffset = nextBackingStoreOffset;
+        nextBackingStoreOffset += config_memPerFrame;
+    }
+    
+    cout << "[Memory] Allocated " << p->getMemory().memSizeBytes << " bytes (" 
+         << p->getMemory().numPages << " pages) for process " << p->getName() << endl;
+    
+    return true;
+}
+
+void releaseProcessMemory(Process* p) {
+    lock_guard<mutex> lock(memoryMutex);
+    
+    // Write out dirty pages
+    for (int i = 0; i < p->getMemory().numPages; i++) {
+        if (p->getMemory().pageTable[i].valid && p->getMemory().pageTable[i].dirty) {
+            writePageToBackingStore(p->getMemory().pageTable[i].frameIndex, 
+                                   p->getMemory().pageTable[i].backingStoreOffset);
+            g_memoryStats.numPagedOut++;
+        }
+        
+        // Free the frame
+        if (p->getMemory().pageTable[i].valid) {
+            int frame = p->getMemory().pageTable[i].frameIndex;
+            frameTable[frame] = -1;
+            g_memoryStats.freeMemory += config_memPerFrame;
+            g_memoryStats.usedMemory -= config_memPerFrame;
+        }
+    }
+    
+    cout << "[Memory] Released memory for process " << p->getName() << endl;
+}
+
+int handlePageFault(Process* p, int page) {
+    lock_guard<mutex> lock(memoryMutex);
+    
+    g_memoryStats.pageFaults++;
+    
+    // Find a free frame
+    int freeFrame = -1;
+    for (int i = 0; i < totalFrames; i++) {
+        if (frameTable[i] == -1) {
+            freeFrame = i;
+            break;
+        }
+    }
+    
+    // If no free frame, evict one using LRU
+    if (freeFrame == -1) {
+        // Find least recently used frame
+        long long oldest = LLONG_MAX;
+        for (int i = 0; i < totalFrames; i++) {
+            if (frameLastUsed[i] < oldest) {
+                oldest = frameLastUsed[i];
+                freeFrame = i;
+            }
+        }
+        
+        // Evict the victim frame
+        int victimPID = frameTable[freeFrame];
+        
+        // Find the process that owns this frame and write out if dirty
+        auto allProcesses = scheduler.getProcessList();
+        for (auto& victimProc : allProcesses) {
+            if (victimProc->getPid() == victimPID) {
+                for (int i = 0; i < victimProc->getMemory().numPages; i++) {
+                    if (victimProc->getMemory().pageTable[i].valid && 
+                        victimProc->getMemory().pageTable[i].frameIndex == freeFrame) {
+                        
+                        if (victimProc->getMemory().pageTable[i].dirty) {
+                            writePageToBackingStore(freeFrame, 
+                                                   victimProc->getMemory().pageTable[i].backingStoreOffset);
+                            g_memoryStats.numPagedOut++;
+                        }
+                        
+                        victimProc->getMemory().pageTable[i].valid = false;
+                        victimProc->getMemory().pageTable[i].frameIndex = -1;
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+    }
+    
+    // Load the page into the frame
+    readPageFromBackingStore(freeFrame, p->getMemory().pageTable[page].backingStoreOffset);
+    
+    // Update page table and frame table
+    p->getMemory().pageTable[page].valid = true;
+    p->getMemory().pageTable[page].frameIndex = freeFrame;
+    p->getMemory().pageTable[page].referenced = true;
+    p->getMemory().pageTable[page].lastUsed = globalTick;
+    
+    frameTable[freeFrame] = p->getPid();
+    frameLastUsed[freeFrame] = globalTick;
+    
+    // Update memory stats
+    g_memoryStats.numPagedIn++;
+    g_memoryStats.usedMemory += config_memPerFrame;
+    g_memoryStats.freeMemory -= config_memPerFrame;
+    
+    cout << "[Page Fault] Process " << p->getName() << " page " << page 
+         << " loaded into frame " << freeFrame << endl;
+    
+    return freeFrame;
+}
+
+// Rest of the code remains the same (loadASCIIfont, textToAscii, keyboardHandler, etc.)
+// ... [Keep all the other functions as they were in your original code, just make sure to update Process method calls]
 
 int config_numCPU = 2;
 SchedulerType config_schedType = FCFS;
 int config_quantumCycles = 3;
-
 
 // loads ascii font from letters.txt (do not edit letters.txt)
 void loadASCIIfont(const string& filename) {
@@ -804,12 +1031,6 @@ void keyboardHandler() {
     }
 }
 
-// global memory config from MO2
-int config_maxOverallMem = 0;
-int config_memPerFrame = 0;
-int config_minMemPerProc = 0;
-int config_maxMemPerProc = 0;
-
 // configuration/initialization
 void loadConfig(const string& filename) {
 
@@ -859,32 +1080,16 @@ void loadConfig(const string& filename) {
         << " MinMemProc=" << config_minMemPerProc
         << " MaxMemProc=" << config_maxMemPerProc
         << endl;
-
-//-- end initialize/reading config.txt
-// allocate physical memory frames
-        totalFrames = config_maxOverallMem / config_memPerFrame;
-        physFrames.assign(totalFrames, vector<uint8_t>(config_memPerFrame, 0));
-        frameTable.assign(totalFrames, -1);
-
-        // open backing store
-        backingStore.open("csopesy-backing-store.txt", ios::in | ios::out | ios::binary);
-        if(!backingStore.is_open()) {
-            backingStore.open("csopesy-backing-store.txt", ios::out | ios::binary);
-            backingStore.close();
-            backingStore.open("csopesy-backing-store.txt", ios::in | ios::out | ios::binary);
-        }
-        g_memoryStats.totalMemory = config_maxOverallMem;
-        g_memoryStats.freeMemory = config_maxOverallMem;
+    
+    // Initialize memory system after loading config
+    initializeMemorySystem();
 }
-
-
 
 // ----- MARQUEE LOGIC -----
 void marqueeHandler() {
     int offset = 0;
     while (running) {
         if (marqueeRunning) {
-            //string text;
             string asciiText;
             {
                 lock_guard<mutex> lock(queue_mutex);
@@ -919,7 +1124,6 @@ void marqueeHandler() {
 
             this_thread::sleep_for(chrono::milliseconds(marqueeSpeed));
 
-
             // cycle offset across the full doubled line length instead of offset = (offset + 1) % 80;
             if (!lines.empty()) {
                 offset = (offset + 1) % (lines[0].size() + 3);
@@ -946,21 +1150,26 @@ void schedulerHandler() {
                 int pid = ++processCounter;
                 int instrCount = rand() % (maxIns - minIns + 1) + minIns;
                 auto p = make_shared<Process>(pid, "autoP" + to_string(pid), instrCount);
+                
+                // Assign random memory size within bounds
+                int memSize = rand() % (config_maxMemPerProc - config_minMemPerProc + 1) + config_minMemPerProc;
+                // Round to nearest power of 2 for simplicity
+                memSize = 1 << (int)ceil(log2(memSize));
+                p->setMemorySize(memSize);
 
                 if (doingnumfour)
-                    p->instructions = scheduler.generateTestInstructions(instrCount); // for #4 demo
+                    p->setInstructions(scheduler.generateTestInstructions(instrCount)); // for #4 demo
                 else {
-                    p->instructions = scheduler.generateRandomInstructions(instrCount); // instruction engine-related
+                    p->setInstructions(scheduler.generateRandomInstructions(instrCount)); // instruction engine-related
                 }
 
                 scheduler.addProcess(p);
 
-                // uncomment if you want the screen to print info
-                /* cout << "[Scheduler Auto-created process " << p->name
-                    << " with " << instrCount << " instructions.\n"; */
-
+                cout << "[Scheduler] Auto-created process " << p->getName()
+                    << " with " << instrCount << " instructions, " 
+                    << memSize << " bytes memory.\n";
             }
-            // changed so we can use the config value delay-per-exec that's in config.txt
+            
             this_thread::sleep_for(chrono::milliseconds(delayPerExec));
         }
         else {
@@ -971,13 +1180,10 @@ void schedulerHandler() {
     }
 }
 
-
 // ----- COMMAND INTERPRETER -----
-// from the template we removed the switch cases
 void commandInterpreter() {
     shared_ptr<Process> currentProcess = nullptr; // active process context
     bool inProcessContext = false;
-	// bool initialized = false; // must be initialized before use - commented out bc we have systemInitialized
 
     while (running) {
         string command;
@@ -1008,7 +1214,7 @@ void commandInterpreter() {
                 system("cls");
                 cout << "\nAvailable commands:\n"
                     << " help                  - Show this help menu\n"
-                    << " screen -s [name]      - Creates a new process\n"
+                    << " screen -s [name] [mem]- Creates a new process with memory size\n"
                     << " screen -r [name]      - Reopens an existing process\n"
                     << " screen -ls            - List all processes\n"
                     << " scheduler-start       - Start scheduler\n"
@@ -1019,6 +1225,7 @@ void commandInterpreter() {
                     << " stop_marquee          - Stop marquee animation\n"
                     << " set_text              - Change marquee text\n"
                     << " set_speed             - Change marquee speed (ms)\n"
+                    << " meminfo               - Show memory information\n"
                     << " exit                  - Quit the emulator\n";
                 cout << "\nCommand> " << flush;
             }
@@ -1030,40 +1237,55 @@ void commandInterpreter() {
                 cout << "[OK] Scheduler initialized. CPUs=" << config_numCPU
                     << " Type=" << (config_schedType == RR ? "RR" : "FCFS")
                     << " Quantum=" << config_quantumCycles << endl;
-                cout << "\nCommand> " << flush; // added
+                cout << "\nCommand> " << flush;
             }
 
             else if (command.rfind("screen -s", 0) == 0) {
-                // screen -s <name>
+                // screen -s <name> <memSize>
                 stringstream ss(command);
                 string tmp, name;
                 int memSize;
                 ss >> tmp >> tmp >> name >> memSize;
-                name.erase(remove_if(name.begin(), name.end(), ::isspace), name.end());
-                if(memSize < 64 || memSize < config_minMemPerProc || memSize > config_maxMemPerProc ||
-                    (memSize & (memSize - 1)) != 0 ) 
-                {
-                    cout << "[Error] Invalid memory allocation.\n";
-                    cout << "\nCommand> ";
+                
+                if (name.empty()) {
+                    cout << "Usage: screen -s <name> <memory_size_in_bytes>\n";
+                    cout << "Memory must be between " << config_minMemPerProc 
+                         << " and " << config_maxMemPerProc << " bytes\n";
+                    cout << "\nCommand> " << flush;
                     continue;
                 }
-                    int pid = ++processCounter;
-                    int instr = rand() % (maxIns - minIns + 1) + minIns;
-                    auto p = make_shared<Process>(pid, name, instr);
-
-                    p->mem.memSizeBytes = memSize;
-                    p->mem.numPages = memSize / config_memPerFrame;
-                    p->mem.pageTable.assign(p->mem.numPages, PageTableEntry());
-
-                    scheduler.addProcess(p);
-
-                    cout << "[New Screen] Created process: " << name
-                        << " (" << instr << " instructions)\n";
-                    // commented out because it should return back to main menu
-                    // currentProcess = p;
-                    // inProcessContext = true;
-                    // cout << "\n[" << name << " @process]> ";
+                
+                // Validate memory size
+                if (memSize < config_minMemPerProc || memSize > config_maxMemPerProc) {
+                    cout << "[Error] Memory size must be between " << config_minMemPerProc 
+                         << " and " << config_maxMemPerProc << " bytes\n";
                     cout << "\nCommand> " << flush;
+                    continue;
+                }
+                
+                // Check if it's a power of 2 (optional but good for paging)
+                if ((memSize & (memSize - 1)) != 0) {
+                    cout << "[Warning] Memory size is not a power of 2. Rounding up.\n";
+                    memSize = 1 << (int)ceil(log2(memSize));
+                }
+                
+                int pid = ++processCounter;
+                int instr = rand() % (maxIns - minIns + 1) + minIns;
+                auto p = make_shared<Process>(pid, name, instr);
+                p->setMemorySize(memSize);
+
+                if (doingnumfour)
+                    p->setInstructions(scheduler.generateTestInstructions(instr));
+                else {
+                    p->setInstructions(scheduler.generateRandomInstructions(instr));
+                }
+
+                scheduler.addProcess(p);
+
+                cout << "[New Screen] Created process: " << name
+                    << " (" << instr << " instructions, " 
+                    << memSize << " bytes memory)\n";
+                cout << "\nCommand> " << flush;
             }
 
             else if (command.rfind("screen -r", 0) == 0) {
@@ -1083,7 +1305,7 @@ void commandInterpreter() {
                         while (!temp.empty()) {
                             auto p = temp.front();
                             temp.pop();
-                            if (p->name == name && p->state != FINISHED) { // added check to prevent reataching to finished processes
+                            if (p->getName() == name && p->getState() != FINISHED) {
                                 found = true;
                                 currentProcess = p;
                                 inProcessContext = true;
@@ -1096,40 +1318,40 @@ void commandInterpreter() {
                         cout << "\n[" << name << " @process]> ";
                     }
                     else {
-                        //Check if process crashed due to memory violation
-                        bool crashed = false;
-                        shared_ptr<Process> crashedProc = nullptr;
-
-                        // Look through READY queue
-                        queue<shared_ptr<Process>> temp2 = scheduler.getReadyQueue();
-                        while (!temp2.empty()) {
-                            auto px = temp2.front();
-                            temp2.pop();
-                            if (px->name == name && px->memoryFaulted) {
-                                crashed = true;
-                                crashedProc = px;
-                                break;
-                            }
-                        }
-
-                        if (crashed) {
-                            cout << "Process " << name 
-                                << " shut down due to memory access violation error that occurred at "
-                                << crashedProc->faultTime << ". "
-                                << crashedProc->faultAddressHex << " invalid.\n";
-                        }
-                        else {
-                            cout << "[Error] Process not found.\n";
-                        }
-
+                        cout << "[Error] Process not found.\n";
                         cout << "\nCommand> " << flush;
                     }
                 }
             }
 
             else if (command == "screen -ls") {
-                scheduler.printStatus(); // shows cores + ready/finished
-                scheduler.printUtilization(); // adds core utilization summary
+                scheduler.printStatus();
+                scheduler.printUtilization();
+                cout << "\nCommand> " << flush;
+            }
+
+            else if (command == "meminfo") {
+                cout << "\n=== Memory Information ===\n";
+                cout << "Total Memory: " << g_memoryStats.totalMemory << " bytes\n";
+                cout << "Used Memory: " << g_memoryStats.usedMemory << " bytes\n";
+                cout << "Free Memory: " << g_memoryStats.freeMemory << " bytes\n";
+                cout << "Page Size: " << config_memPerFrame << " bytes\n";
+                cout << "Total Frames: " << totalFrames << "\n";
+                cout << "Page Faults: " << g_memoryStats.pageFaults << "\n";
+                cout << "Pages Paged In: " << g_memoryStats.numPagedIn << "\n";
+                cout << "Pages Paged Out: " << g_memoryStats.numPagedOut << "\n";
+                
+                // Show frame table
+                cout << "\nFrame Table:\n";
+                for (int i = 0; i < totalFrames; i++) {
+                    cout << "Frame " << i << ": ";
+                    if (frameTable[i] == -1)
+                        cout << "Free";
+                    else
+                        cout << "Process " << frameTable[i];
+                    cout << " (Last Used: " << frameLastUsed[i] << ")\n";
+                }
+                cout << "------------------------------\n";
                 cout << "\nCommand> " << flush;
             }
 
@@ -1153,14 +1375,21 @@ void commandInterpreter() {
                     for (int i = 0; i < 5; i++) {
                         int instrCount = rand() % 10 + 5;
                         auto p = make_shared<Process>(i, "p" + to_string(i + 1), instrCount);
+                        
+                        // Assign random memory size
+                        int memSize = rand() % (config_maxMemPerProc - config_minMemPerProc + 1) + config_minMemPerProc;
+                        memSize = 1 << (int)ceil(log2(memSize));
+                        p->setMemorySize(memSize);
 
                         if (doingnumfour)
-                            p->instructions = scheduler.generateTestInstructions(instrCount); // for #4 demo
+                            p->setInstructions(scheduler.generateTestInstructions(instrCount));
                         else {
-                            p->instructions = scheduler.generateRandomInstructions(instrCount); // instruction engine-related
+                            p->setInstructions(scheduler.generateRandomInstructions(instrCount));
                         }
 
                         scheduler.addProcess(p);
+                        cout << "[Scheduler] Created process " << p->getName() 
+                             << " with " << memSize << " bytes memory\n";
                     }
                 }
                 else cout << "Scheduler already running.\n";
@@ -1170,7 +1399,6 @@ void commandInterpreter() {
             else if (command == "scheduler-stop") {
                 if (schedulerRunning) {
                     schedulerRunning = false;
-
                     cout << "Scheduler stopped.\n";
                     cout << "\nCommand> " << flush;
                 }
@@ -1180,7 +1408,6 @@ void commandInterpreter() {
 
             else if (command == "report-util") {
                 scheduler.printStatus();
-                //add-on
                 scheduler.printUtilization();
                 std::string location;
                 location = scheduler.saveUtilizationFile("csopesy-log.txt");
@@ -1257,86 +1484,85 @@ void commandInterpreter() {
 
             else if (command == "process-smi") {
                 if (currentProcess) {
-                    cout << "\nProcess Info:\n";
-                    cout << " Name: " << currentProcess->name << "\n";
-                    cout << " PID: " << currentProcess->pid << "\n";
-
-                    // Replace the ternary operators with clear logic
+                    cout << "\n=== Process Information ===\n";
+                    cout << "Name: " << currentProcess->getName() << "\n";
+                    cout << "PID: " << currentProcess->getPid() << "\n";
+                    
                     string stateStr;
-                    if (currentProcess->state == READY)
+                    ProcessState state = currentProcess->getState();
+                    if (state == READY)
                         stateStr = "READY";
-                    else if (currentProcess->state == RUNNING)
+                    else if (state == RUNNING)
                         stateStr = "RUNNING";
-                    else if (currentProcess->state == SLEEPING)
+                    else if (state == SLEEPING)
                         stateStr = "SLEEPING";
                     else
                         stateStr = "FINISHED";
-
-                    cout << " State: " << stateStr << "\n";
-                    cout << " Progress: " << currentProcess->executedInstructions
-                        << "/" << currentProcess->totalInstructions << "\n";
-
-                    // Add finished notice
-                    if (currentProcess->state == FINISHED) {
-                        cout << "Status: Finished!\n";
+                    
+                    cout << "State: " << stateStr << "\n";
+                    cout << "Progress: " << currentProcess->getExecutedInstructions()
+                        << "/" << currentProcess->getTotalInstructions() << "\n";
+                    cout << "Memory: " << currentProcess->getMemory().memSizeBytes << " bytes\n";
+                    cout << "Pages: " << currentProcess->getMemory().numPages << "\n";
+                    
+                    if (currentProcess->isMemoryFaulted()) {
+                        cout << "Status: MEMORY FAULT at address " << currentProcess->getFaultAddress()
+                             << " (" << currentProcess->getFaultTime() << ")\n";
                     }
-
-                    // Added instruction log
-                    if (!currentProcess->log.empty()) {
-                        cout << "\nLogs:\n";
-                        for (const auto& msg : currentProcess->log)
-                            cout << "  " << msg << "\n";
+                    
+                    // Show page table
+                    cout << "\nPage Table:\n";
+                    for (int i = 0; i < currentProcess->getMemory().numPages; i++) {
+                        auto& entry = currentProcess->getMemory().pageTable[i];
+                        cout << "Page " << i << ": ";
+                        if (entry.valid) {
+                            cout << "Frame " << entry.frameIndex;
+                            if (entry.dirty) cout << " (Dirty)";
+                            if (entry.referenced) cout << " (Referenced)";
+                        } else {
+                            cout << "Not in memory";
+                        }
+                        cout << "\n";
                     }
-
-                    // MO2 high-level memory + process summary
-                    cout << "\n------ process-smi ------\n";
-
-                    // memory summary
-                    cout << "Memory: "
-                        << g_memoryStats.usedMemory << "/" << g_memoryStats.totalMemory
-                        << " bytes used, "
-                        << g_memoryStats.freeMemory << " bytes free\n";
-
-                    scheduler.printStatus();
-                    scheduler.printUtilization();
-
+                    
                     cout << "------------------------------\n";
-                    cout << "\nCommand> " << flush;
+                    if (currentProcess)
+                        cout << "\n[" << currentProcess->getName() << " @process]> ";
+                    else
+                        cout << "\nCommand> ";
                 }
-                // MO2
-                else if (command == "vmstat") {
-                    cout << "\n=== vmstat ===\n";
+            }
+            else if (command == "vmstat") {
+                cout << "\n=== Virtual Memory Statistics ===\n";
+                cout << "Total memory: " << g_memoryStats.totalMemory << " bytes\n";
+                cout << "Used memory : " << g_memoryStats.usedMemory << " bytes\n";
+                cout << "Free memory : " << g_memoryStats.freeMemory << " bytes\n";
+                cout << "Page faults : " << g_memoryStats.pageFaults << "\n";
+                cout << "Paged in    : " << g_memoryStats.numPagedIn << "\n";
+                cout << "Paged out   : " << g_memoryStats.numPagedOut << "\n\n";
 
-                    // person 1 u should update this
-                    cout << "Total memory: " << g_memoryStats.totalMemory << " bytes\n";
-                    cout << "Used memory : " << g_memoryStats.usedMemory << " bytes\n";
-                    cout << "Free memory : " << g_memoryStats.freeMemory << " bytes\n";
-                    cout << "Paged in    : " << g_memoryStats.numPagedIn << "\n";
-                    cout << "Paged out   : " << g_memoryStats.numPagedOut << "\n\n";
+                auto snap = scheduler.getTickSnapshot();
+                g_vmCpuStats.totalCpuTicks = snap.totalTicks;
+                g_vmCpuStats.activeCpuTicks = snap.activeTicks;
+                g_vmCpuStats.idleCpuTicks =
+                    g_vmCpuStats.totalCpuTicks - g_vmCpuStats.activeCpuTicks;
 
-                    // CPU ticks from scheduler
-                    auto snap = scheduler.getTickSnapshot();
-                    g_vmCpuStats.totalCpuTicks = snap.totalTicks;
-                    g_vmCpuStats.activeCpuTicks = snap.activeTicks;
-                    g_vmCpuStats.idleCpuTicks =
-                        g_vmCpuStats.totalCpuTicks - g_vmCpuStats.activeCpuTicks;
+                cout << "Idle cpu ticks  : " << g_vmCpuStats.idleCpuTicks << "\n";
+                cout << "Active cpu ticks: " << g_vmCpuStats.activeCpuTicks << "\n";
+                cout << "Total cpu ticks : " << g_vmCpuStats.totalCpuTicks << "\n";
 
-                    cout << "Idle cpu ticks  : " << g_vmCpuStats.idleCpuTicks << "\n";
-                    cout << "Active cpu ticks: " << g_vmCpuStats.activeCpuTicks << "\n";
-                    cout << "Total cpu ticks : " << g_vmCpuStats.totalCpuTicks << "\n";
-
-                    cout << "------------------------------\n";
-                    cout << "\nCommand> " << flush;
-                }
-                else {
-                    cout << "[Error] No process attached.\n";
-                }
-
-                // keep prompt consistent
+                cout << "------------------------------\n";
                 if (currentProcess)
-                    cout << "\n[" << currentProcess->name << " @process]> ";
+                    cout << "\n[" << currentProcess->getName() << " @process]> ";
                 else
-                    cout << "\n[none @process]> ";
+                    cout << "\nCommand> ";
+            }
+            else {
+                cout << "[Error] Unknown command in process context.\n";
+                if (currentProcess)
+                    cout << "\n[" << currentProcess->getName() << " @process]> ";
+                else
+                    cout << "\nCommand> ";
             }
         }
     }
@@ -1352,28 +1578,29 @@ void printNames() {
         << "----------------------------------------\n";
 }
 
-
 int main() {
+    srand(time(NULL));
     loadConfig("config.txt");
     loadASCIIfont("letters.txt");
-    marqueeText = textToAscii("CSOPESY"); // make sure the font is alr loaded
+    marqueeText = textToAscii("CSOPESY");
 
     printNames();
-
     cout << "Command> ";
 
-    // create different threads for each major component
     thread kbThread(keyboardHandler);
     thread marqueeThread(marqueeHandler);
     thread commandThread(commandInterpreter);
-    //new thread
     thread schedulerThread(schedulerHandler);
 
-    // by using join it will wait for the threads to finish before exiting main
     kbThread.join();
     marqueeThread.join();
     commandThread.join();
     schedulerThread.join();
+
+    // Close backing store
+    if (backingStore.is_open()) {
+        backingStore.close();
+    }
 
     return 0;
 }
