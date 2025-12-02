@@ -1226,6 +1226,7 @@ void commandInterpreter() {
                     << " set_text              - Change marquee text\n"
                     << " set_speed             - Change marquee speed (ms)\n"
                     << " meminfo               - Show memory information\n"
+                    << " vmstat                - Show memory and CPU tick stats\n"
                     << " exit                  - Quit the emulator\n";
                 cout << "\nCommand> " << flush;
             }
