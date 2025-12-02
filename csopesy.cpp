@@ -33,42 +33,6 @@ delay-per-exec 0
 using namespace std;
 
 enum ProcessState { READY, RUNNING, SLEEPING, FINISHED };
-enum SchedulerType { FCFS, RR }; // FCFS, round robin
-struct Process;          // <--- forward declaration
-class Scheduler;         // <--- forward declaration
-// ------ MO2 memory manager ------
-struct MemoryStats {
-    int totalMemory = 0;
-    int usedMemory = 0;
-    int freeMemory = 0;
-    long long numPagedIn = 0;
-    long long numPagedOut = 0;
-};
-struct VmCpuStats {
-    long long idleCpuTicks = 0;
-    long long activeCpuTicks = 0;
-    long long totalCpuTicks = 0;
-};
-// ----- Demand Paging-----
-struct PageTableEntry {
-    bool valid = false;       
-    bool dirty = false;       
-    int frameIndex = -1;      
-    long backingStoreOffset;  // location in csopesy-backing-store.txt
-};
-struct ProcessMemory {
-    int memSizeBytes;  
-    int numPages;
-    vector<PageTableEntry> pageTable;
-};
-MemoryStats g_memoryStats;
-VmCpuStats  g_vmCpuStats;
-vector<int> frameTable;            
-vector<vector<uint8_t>> physFrames;
-int totalFrames = 0;
-fstream backingStore;
-int config_memPerFrame = 0;
-extern Scheduler scheduler;   // <--- so the handler can use it
 // shared resources/globals
 queue<string> keyboard_queue;
 mutex queue_mutex;
@@ -101,55 +65,47 @@ atomic<bool> schedulerRunning(false);
 
 atomic<bool> systemInitialized(false);
 
-// ----- page fault handler (NOW VALID) -----
-int handlePageFault(Process* p, int page) {
-    // find free frame
-    for(int i=0;i<totalFrames;i++){
-        if(frameTable[i] == -1){
-            frameTable[i] = p->pid;
-            p->mem.pageTable[page].valid = true;
-            p->mem.pageTable[page].frameIndex = i;
+// ------ MO2 memory manager ------
+struct MemoryStats {
+    int totalMemory = 0;
+    int usedMemory = 0;
+    int freeMemory = 0;
+    long long numPagedIn = 0;
+    long long numPagedOut = 0;
+};
 
-            // load from backing store
-            backingStore.seekg(p->mem.pageTable[page].backingStoreOffset);
-            backingStore.read((char*)physFrames[i].data(), config_memPerFrame);
-            g_memoryStats.numPagedIn++;
-            g_memoryStats.freeMemory -= config_memPerFrame;
-            return i;
-        }
-    }
+struct VmCpuStats {
+    long long idleCpuTicks = 0;
+    long long activeCpuTicks = 0;
+    long long totalCpuTicks = 0;
+};
 
-    // no free frame → evict victim (FIFO)
-    int victimFrame = rand() % totalFrames;
-    int victimPID = frameTable[victimFrame];
-
-    // write victim frame back to backing store
-    auto tempQueue = scheduler.getReadyQueue();
-    while(!tempQueue.empty()) {
-        auto pr = tempQueue.front();
-        tempQueue.pop();
-
-        if (pr->pid == victimPID) {
-            for (auto& entry : pr->mem.pageTable) {
-                if (entry.valid && entry.frameIndex == victimFrame) {
-
-                    entry.valid = false;
-
-                    backingStore.seekp(entry.backingStoreOffset);
-                    backingStore.write(
-                        (char*)physFrames[victimFrame].data(),
-                        config_memPerFrame
-                    );
-
-                    entry.dirty = false;
-                    g_memoryStats.numPagedOut++;
-                }
-            }
-        }
-    }
+MemoryStats g_memoryStats;
+VmCpuStats  g_vmCpuStats;
 
 
-    // load new page
+
+// ----- Demand Paging-----
+struct PageTableEntry {
+    bool valid = false;       
+    bool dirty = false;       
+    int frameIndex = -1;      
+    long backingStoreOffset;  // location in csopesy-backing-store.txt
+};
+
+struct ProcessMemory {
+    int memSizeBytes;  
+    int numPages;
+    vector<PageTableEntry> pageTable;
+};
+
+vector<int> frameTable;            
+vector<vector<uint8_t>> physFrames;
+int totalFrames = 0;
+
+fstream backingStore;               
+
+struct Process {
     int pid;
     string name;
     ProcessState state;
@@ -732,7 +688,7 @@ public:
 
 };
 
-
+Scheduler scheduler;
 
 int config_numCPU = 2;
 SchedulerType config_schedType = FCFS;
