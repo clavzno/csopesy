@@ -8,6 +8,19 @@ batch-process-freq 1
 min-ins 1000
 max-ins 2000
 delay-per-exec 0
+
+num-cpu 4
+scheduler "rr"
+quantum-cycles 5
+batch-process-freq 1
+min-ins 1000
+max-ins 2000
+delay-per-exec 0
+
+max-overall-mem 65536        # 64KB total memory
+mem-per-frame 4096           # 4KB page size
+min-mem-per-proc 4096        # 4KB min per process
+max-mem-per-proc 32768       # 32KB max per process
 */
 
 #include <iostream>
