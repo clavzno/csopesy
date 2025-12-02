@@ -3,7 +3,7 @@ C:\Users\gicac\source\repos\clavzno\csopesy\csopesy.cpp(284,29): warning C4996: 
 C:\Users\gicac\source\repos\clavzno\csopesy\csopesy.cpp(296,29): warning C4996: 'ctime': This function or variable may be unsafe. Consider using ctime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
 C:\Users\gicac\source\repos\clavzno\csopesy\csopesy.cpp(335,29): warning C4996: 'ctime': This function or variable may be unsafe. Consider using ctime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
 C:\Users\gicac\source\repos\clavzno\csopesy\csopesy.cpp(347,29): warning C4996: 'ctime': This function or variable may be unsafe. Consider using ctime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
-C:\Users\gicac\source\repos\clavzno\csopesy\csopesy.cpp(967,15): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
-C:\Users\gicac\source\repos\clavzno\csopesy\csopesy.cpp(981,23): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
-C:\Users\gicac\source\repos\clavzno\csopesy\csopesy.cpp(1607,15): warning C4244: 'argument': conversion from 'time_t' to 'unsigned int', possible loss of data
+C:\Users\gicac\source\repos\clavzno\csopesy\csopesy.cpp(964,15): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+C:\Users\gicac\source\repos\clavzno\csopesy\csopesy.cpp(978,23): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+C:\Users\gicac\source\repos\clavzno\csopesy\csopesy.cpp(1578,15): warning C4244: 'argument': conversion from 'time_t' to 'unsigned int', possible loss of data
   csopesy_program.vcxproj -> C:\Users\gicac\source\repos\clavzno\csopesy\x64\Debug\csopesy_program.exe
